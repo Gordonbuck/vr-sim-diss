@@ -1,0 +1,8 @@
+Name: vr-sim-diss
+Version: 0.1
+Synopsis: A simulator for Viewstamped Replication.
+Authors: Gordon Buck <ghb28@cam.ac.uk>
+License: MIT
+OASISFormat: 0.4
+BuildTools: ocamlbuild
+Plugins: META (0.4), DevFiles (0.4)
