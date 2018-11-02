@@ -1,4 +1,13 @@
 .DS_Store
+
 _build/*
+*.native
+*.byte
+*.cmi
+*.cmo
+
 setup.data
+setup.log
+setup.bin
+
 src/splc
