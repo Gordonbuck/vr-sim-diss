@@ -10,4 +10,4 @@ setup.data
 setup.log
 setup.bin
 
-src/splc
+src/spl/splc

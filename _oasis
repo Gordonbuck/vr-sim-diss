@@ -6,3 +6,9 @@ License: MIT
 OASISFormat: 0.4
 BuildTools: ocamlbuild
 Plugins: META (0.4), DevFiles (0.4)
+BuildDepends: core, threads
+
+Executable "simulation"
+  Path: src/sim
+  MainIs: main.ml
+  CompiledObject: best
