@@ -6,7 +6,6 @@ module type StateMachine_type = sig
   type t
   val create: unit -> t
   val apply_op: t -> operation -> t
-  val apply_ops: t -> operation list -> t
   val last_res: t -> result
 end
 
@@ -32,11 +31,6 @@ module KeyValueStore : StateMachine_type = struct
         { hash_tbl = mach.hash_tbl; last_res = Some(value); }
       )
     | Get(key) -> { hash_tbl = mach.hash_tbl; last_res = Hashtbl.find mach.hash_tbl key; }
-
-  let rec apply_ops mach ops =
-    match ops with
-    | (op::ops) -> apply_ops (apply_op mach op) ops
-    | [] -> mach
 
   let last_res mach = mach.last_res
 

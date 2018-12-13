@@ -10,7 +10,7 @@ type replica_message =
   | Prepare of int * client_message * int * int
   | PrepareOk of int * int * int
   | Reply of int * int * StateMachine.result
-  | Commit
+  | Commit of int * int
   | StartViewChange
   | DoViewChange
   | StartView
@@ -44,7 +44,7 @@ type state = {
 let is_primary state = 
   state.view_no mod (List.length state.configuration) = state.replica_no
 
-let update_ct ct c s = List.mapi ct (fun i cte -> if i = c then (s, None) else cte)
+let update_ct ct c ?(res=None) s = List.mapi ct (fun i cte -> if i = c then (s, res) else cte)
 
 let on_request state op c s =
   if (is_primary state) then
@@ -63,10 +63,12 @@ let on_request state op c s =
         let request = Request(op, c, s) in
         let log = request::state.log in
         let client_table = update_ct state.client_table c s in
+        let waiting_prepareoks = 0::state.waiting_prepareoks in
         ({state with 
           op_no = op_no;
           log = log;
           client_table = client_table;
+          waiting_prepareoks = waiting_prepareoks;
          }, Some(Prepare(state.view_no, request, op_no, state.commit_no)))
       else
         (* drop request *) (state, None)
@@ -114,9 +116,56 @@ let on_prepare state v (op, c, s) n k =
               } in 
   (state, message_opt)
 
+let process_waiting_prepareoks f waiting_prepareoks = 
+  let rec process_waiting_prepareoks rev_waiting_prepareoks n = 
+    match rev_waiting_prepareoks with
+    | [] -> (rev_waiting_prepareoks, n)
+    | w::rev_waiting_prepareoks -> 
+      if w < f then 
+        (w::rev_waiting_prepareoks, n)
+      else 
+        process_waiting_prepareoks rev_waiting_prepareoks (n+1) in
+  let no_waiting_prepareoks = List.length waiting_prepareoks in
+  let (rev_waiting_prepareoks, rev_index) = process_waiting_prepareoks (List.rev waiting_prepareoks) (-1) in
+  (List.rev rev_waiting_prepareoks, no_waiting_prepareoks - 1 - rev_index)
 
+let commit_all view_no mach ct reqs = 
+  let rec commit_all mach ct reqs replies = 
+    match reqs with 
+    | Request(op, c, s)::reqs -> 
+      let mach = StateMachine.apply_op mach op in
+      let res = StateMachine.last_res mach in
+      let ct = update_ct ct c ~res:(Some(res)) s in
+      commit_all mach ct reqs (Reply(view_no, s, res)::replies)
+    | _ -> (mach, ct, replies) in
+  commit_all mach ct reqs []
 
-
+let on_prepareok state v n i = 
+  let f = ((List.length state.configuration) / 2) in
+  let no_waiting = List.length state.waiting_prepareoks in
+  let index = state.commit_no + no_waiting - n in
+  let no_prepareoks_opt = List.nth state.waiting_prepareoks index in
+  match no_prepareoks_opt with
+  | None -> (* no log entry for that op number *)  assert(false)
+  | Some(no_prepareoks) ->
+    let no_prepareoks = no_prepareoks + 1 in
+    let waiting_prepareoks = List.mapi state.waiting_prepareoks (fun i w -> if i = index then no_prepareoks else w) in
+    let state = {state with 
+                 waiting_prepareoks = waiting_prepareoks;
+                } in
+    if (no_prepareoks = f) then 
+      let (waiting_prepareoks, commit_until) = process_waiting_prepareoks f waiting_prepareoks in 
+      let last_committed_index = (List.length state.log) - 1 - state.commit_no in
+      let to_commit = List.filteri state.log (fun i _ -> i < last_committed_index && i >= commit_until) in
+      let (mach, client_table, replies) = commit_all state.view_no state.mach state.client_table (List.rev to_commit) in
+      let commit_no = state.commit_no + (List.length to_commit) in
+      ({state with 
+        commit_no = commit_no;
+        client_table = client_table;
+        mach = mach;
+       }, List.map replies (fun r -> Some(r)))
+    else 
+      (state, [None])
 
 
 
