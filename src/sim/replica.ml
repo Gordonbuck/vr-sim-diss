@@ -12,8 +12,8 @@ type replica_message =
   | Reply of int * int * StateMachine.result
   | Commit of int * int
   | StartViewChange of int * int
-  | DoViewChange of int * (StateMachine.operation * int * int) list * int * int * int
-  | StartView
+  | DoViewChange of int * (StateMachine.operation * int * int) list * int * int * int * int
+  | StartView of int * (StateMachine.operation * int * int) list * int * int
   | Recovery
   | RecoveryResponse
   | GetState
@@ -37,7 +37,7 @@ type state = {
   queued_prepares : (StateMachine.operation * int * int) option list;
   waiting_prepareoks : int list;
   no_startviewchanges : int;
-  doviewchanges : (int * (StateMachine.operation * int * int) list * int * int * int) list;
+  doviewchanges : (int * (StateMachine.operation * int * int) list * int * int * int * int) list;
   last_normal_view_no : int;
   mach: StateMachine.t;
 }
@@ -163,7 +163,7 @@ let on_prepareok state v n i =
       client_table = client_table;
       waiting_prepareoks = waiting_prepareoks;
       mach = mach;
-     }, List.map replies (fun r -> Some(r)))
+     }, replies)
 
 let on_commit state v k = 
   let commit_until = (List.length state.log) - 1 - k in
@@ -181,37 +181,111 @@ let on_commit state v k =
 
     (* HELPER FUNCTIONS BEGIN *)
 
-let notice_viewchange ?(increment=1) ?(no_startviewchanges=0) ?(doviewchange) state = 
-  let view_no = state.view_no + increment in 
+let notice_viewchange state = 
+  let view_no = state.view_no + 1 in 
   let status = ViewChange in
-  let doviewchanges = 
-    match doviewchange with
-    | None -> []
-    | Some(d) -> [d] in
+  let no_startviewchanges = 0 in
   ({state with 
     view_no = view_no;
     status = status;
     no_startviewchanges = no_startviewchanges;
-    doviewchanges = doviewchanges;
-   }, Some(StartViewChange(view_no, state.replica_no)))
+   }, StartViewChange(view_no, state.replica_no))
+
+let process_doviewchanges doviewchanges =
+  let rec process_doviewchanges doviewchanges log last_normal_view_no op_no commit_no = 
+    match doviewchanges with 
+    | [] -> (log, last_normal_view_no, op_no, commit_no)
+    | (v, l, v', n, k, i)::doviewchanges -> 
+      let (log, last_normal_view_no, op_no) = 
+        if (v' > last_normal_view_no || (v' = last_normal_view_no && n > op_no)) then 
+          (l, v', n)
+        else
+          (log, last_normal_view_no, op_no) in
+      let commit_no = if (k > commit_no) then k else commit_no in
+      process_doviewchanges doviewchanges log last_normal_view_no op_no commit_no in
+  process_doviewchanges doviewchanges [] 0 0 0
 
     (* HELPER FUNCTIONS END *)
 
 let on_startviewchange state v i =
-  if (v > state.view_no) then 
-    notice_viewchange ~increment:(v-state.view_no) ~no_startviewchanges:1 state
-  else 
-    let f = ((List.length state.configuration) / 2) in
-    let no_startviewchanges = state.no_startviewchanges + 1 in
-    let message_opt = 
-      if (no_startviewchanges = f) then 
-        Some(DoViewChange(state.view_no, state.log, state.last_normal_view_no, state.op_no, state.commit_no))
-      else
-        None in
-    ({state with 
-      no_startviewchanges = no_startviewchanges;
-     }, message_opt)
+  let f = ((List.length state.configuration) / 2) in
+  let no_startviewchanges = state.no_startviewchanges + 1 in
+  let message_opt = 
+    if (no_startviewchanges = f) then 
+      Some(DoViewChange(state.view_no, state.log, state.last_normal_view_no, state.op_no, state.commit_no, state.replica_no))
+    else
+      None in
+  ({state with 
+    no_startviewchanges = no_startviewchanges;
+   }, message_opt)
       
+let on_doviewchange state v l v' n k i = 
+  let f = ((List.length state.configuration) / 2) in
+  let no_doviewchanges = (List.length state.doviewchanges) + 1 in
+  let doviewchanges = (v, l, v', n, k, i)::state.doviewchanges in
+  if (no_doviewchanges = f + 1) then
+    let status = Normal in 
+    let view_no = v in
+    let (log, last_normal_view_no, op_no, commit_no) = process_doviewchanges doviewchanges in
+    let last_committed_index = (List.length state.log) - 1 - state.commit_no in
+    let commit_until = (List.length state.log) - 1 - commit_no in
+    let to_commit = List.filteri state.log (fun i _ -> i < last_committed_index && i >= commit_until) in
+    let (mach, client_table, replies) = commit_all view_no state.mach state.client_table (List.rev to_commit) in
+    let waiting_prepareoks = List.init (op_no - commit_no) (fun _ -> 0) in
+    ({state with 
+      view_no = view_no;
+      status = status;
+      op_no = op_no;
+      log = log;
+      commit_no = commit_no;
+      client_table = client_table;
+      queued_prepares = [];
+      waiting_prepareoks = waiting_prepareoks;
+      no_startviewchanges = 0;
+      doviewchanges = [];
+      last_normal_view_no = view_no;
+      mach = mach;
+     }, (StartView(view_no, log, op_no, commit_no))::replies)
+  else 
+    ({state with 
+      doviewchanges = doviewchanges;
+     }, [])
+
+let on_startview state v l n k = 
+  let view_no = v in
+  let log = l in
+  let op_no = n in
+  let status = Normal in 
+  let commit_no = k in
+  let last_committed_index = (List.length state.log) - 1 - state.commit_no in
+  let commit_until = (List.length state.log) - 1 - commit_no in
+  let to_commit = List.filteri state.log (fun i _ -> i < last_committed_index && i >= commit_until) in
+  let (mach, client_table, _) = commit_all view_no state.mach state.client_table (List.rev to_commit) in
+  let message_opt = 
+    if (commit_no < op_no) then
+      Some(PrepareOk(view_no, op_no, state.replica_no))
+    else
+      None in
+  ({state with 
+    view_no = view_no;
+    status = status;
+    op_no = op_no;
+    log = log;
+    commit_no = commit_no;
+    client_table = client_table;
+    queued_prepares = [];
+    waiting_prepareoks = [];
+    no_startviewchanges = 0;
+    doviewchanges = [];
+    last_normal_view_no = view_no;
+    mach = mach;
+   }, message_opt)
+
+
+
+
+
+
 
 
 
