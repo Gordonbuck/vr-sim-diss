@@ -11,8 +11,8 @@ type replica_message =
   | PrepareOk of int * int * int
   | Reply of int * int * StateMachine.result
   | Commit of int * int
-  | StartViewChange
-  | DoViewChange
+  | StartViewChange of int * int
+  | DoViewChange of int * (StateMachine.operation * int * int) list * int * int * int
   | StartView
   | Recovery
   | RecoveryResponse
@@ -30,50 +30,36 @@ type state = {
   view_no : int;
   status: status;
   op_no : int;
-  log: client_message list;
+  log: (StateMachine.operation * int * int) list;
   commit_no : int;
   client_table: (int * StateMachine.result option) list;
 
-  queued_prepares : client_message option list;
+  queued_prepares : (StateMachine.operation * int * int) option list;
   waiting_prepareoks : int list;
+  no_startviewchanges : int;
+  doviewchanges : (int * (StateMachine.operation * int * int) list * int * int * int) list;
+  last_normal_view_no : int;
   mach: StateMachine.t;
 }
 
-(* core protocol implementation at replicas *)
+  (* normal operation protocol implementation *)
+
+    (* HELPER FUNCTIONS BEGIN *)
 
 let is_primary state = 
   state.view_no mod (List.length state.configuration) = state.replica_no
 
-let update_ct ct c ?(res=None) s = List.mapi ct (fun i cte -> if i = c then (s, res) else cte)
+let update_ct ?(res=None) ct c s = List.mapi ct (fun i cte -> if i = c then (s, res) else cte)
 
-let on_request state op c s =
-  if (is_primary state) then
-    let cte_opt = List.nth state.client_table c in
-    match cte_opt with 
-    | None -> (* no client table entry for this client id *) assert(false)
-    | Some(cte_s, res_opt) -> 
-      if (cte_s = s) then
-        (* request already being/been executed, try to return result *)
-        match res_opt with
-        | None -> (* no result to return *) (state, None)
-        | Some(res) -> (* return result for most recent operation *) (state, Some(Reply(state.view_no, s, res)))
-      else if (cte_s > s) then
-        (* begin protocol to execute new request *)
-        let op_no = state.op_no + 1 in
-        let request = Request(op, c, s) in
-        let log = request::state.log in
-        let client_table = update_ct state.client_table c s in
-        let waiting_prepareoks = 0::state.waiting_prepareoks in
-        ({state with 
-          op_no = op_no;
-          log = log;
-          client_table = client_table;
-          waiting_prepareoks = waiting_prepareoks;
-         }, Some(Prepare(state.view_no, request, op_no, state.commit_no)))
-      else
-        (* drop request *) (state, None)
-  else
-    (state, None)
+let rec update_ct_reqs ct reqs = 
+  match reqs with
+  | (op, c, s)::reqs -> update_ct_reqs (update_ct ct c s) reqs
+  | [] -> ct
+
+let rec add_nones l n = 
+  match n with 
+  | _ when n < 1 -> l
+  | n -> add_nones (None::l) (n - 1)
 
 let process_queued_prepares queued_prepares =
   let rec process_queued_prepares rev_queued_prepares prepared =
@@ -82,39 +68,6 @@ let process_queued_prepares queued_prepares =
     | (Some(req)::rev_queued_prepares) -> process_queued_prepares rev_queued_prepares (req::prepared) in
   let (rev_queued_prepares, prepared) = process_queued_prepares (List.rev queued_prepares) [] in
   (List.rev rev_queued_prepares, prepared)
-
-let rec add_nones l n = 
-  match n with 
-  | _ when n < 1 -> l
-  | n -> add_nones (None::l) (n - 1)
-
-let rec update_ct_reqs ct reqs = 
-  match reqs with
-  | (Request(op, c, s)::reqs) -> update_ct_reqs (update_ct ct c s) reqs
-  | _ -> ct
-
-(* on_prepare assumes request being sent isnt already in log *)
-
-let on_prepare state v (op, c, s) n k = 
-  let request = Request(op, c, s) in
-  let no_queued = List.length state.queued_prepares in
-  let index = state.op_no + no_queued - n in
-  let queued_prepares = 
-    if (index >= 0) then 
-      List.mapi state.queued_prepares (fun i req_opt -> if i = index then Some(request) else req_opt)
-    else 
-      Some(request)::(add_nones state.queued_prepares (-(index + 1))) in    
-  let (queued_prepares, prepared) = process_queued_prepares queued_prepares in
-  let op_no = state.op_no + List.length prepared in
-  let log = List.append prepared state.log in
-  let client_table = update_ct_reqs state.client_table (List.rev prepared) in
-  let message_opt = if (op_no > state.op_no) then Some(PrepareOk(state.view_no, op_no, state.replica_no)) else None in
-  ({state with 
-    op_no = op_no;
-    log = log;
-    client_table = client_table;
-    queued_prepares = queued_prepares;
-   }, message_opt)
 
 let process_waiting_prepareoks f waiting_prepareoks = 
   let rec process_waiting_prepareoks rev_waiting_prepareoks n = 
@@ -131,13 +84,65 @@ let process_waiting_prepareoks f waiting_prepareoks =
 let commit_all view_no mach ct reqs = 
   let rec commit_all mach ct reqs replies = 
     match reqs with 
-    | Request(op, c, s)::reqs -> 
+    | (op, c, s)::reqs -> 
       let mach = StateMachine.apply_op mach op in
       let res = StateMachine.last_res mach in
-      let ct = update_ct ct c ~res:(Some(res)) s in
+      let ct = update_ct ct c s ~res:(Some(res)) in
       commit_all mach ct reqs (Reply(view_no, s, res)::replies)
     | _ -> (mach, ct, replies) in
   commit_all mach ct reqs []
+
+    (* HELPER FUNCTIONS END *)
+
+let on_request state op c s =
+  if (is_primary state) then
+    let cte_opt = List.nth state.client_table c in
+    match cte_opt with 
+    | None -> (* no client table entry for this client id *) assert(false)
+    | Some(cte_s, res_opt) -> 
+      if (cte_s = s) then
+        (* request already being/been executed, try to return result *)
+        match res_opt with
+        | None -> (* no result to return *) (state, None)
+        | Some(res) -> (* return result for most recent operation *) (state, Some(Reply(state.view_no, s, res)))
+      else if (cte_s > s) then
+        (* begin protocol to execute new request *)
+        let op_no = state.op_no + 1 in
+        let request = Request(op, c, s) in
+        let log = (op, c, s)::state.log in
+        let client_table = update_ct state.client_table c s in
+        let waiting_prepareoks = 0::state.waiting_prepareoks in
+        ({state with 
+          op_no = op_no;
+          log = log;
+          client_table = client_table;
+          waiting_prepareoks = waiting_prepareoks;
+         }, Some(Prepare(state.view_no, request, op_no, state.commit_no)))
+      else
+        (* drop request *) (state, None)
+  else
+    (state, None)
+
+let on_prepare state v (op, c, s) n k = 
+  (* on_prepare assumes request being sent isnt already in log *)
+  let no_queued = List.length state.queued_prepares in
+  let index = state.op_no + no_queued - n in
+  let queued_prepares = 
+    if (index >= 0) then 
+      List.mapi state.queued_prepares (fun i req_opt -> if i = index then Some((op, c, s)) else req_opt)
+    else 
+      Some((op, c, s))::(add_nones state.queued_prepares (-(index + 1))) in    
+  let (queued_prepares, prepared) = process_queued_prepares queued_prepares in
+  let op_no = state.op_no + List.length prepared in
+  let log = List.append prepared state.log in
+  let client_table = update_ct_reqs state.client_table (List.rev prepared) in
+  let message_opt = if (op_no > state.op_no) then Some(PrepareOk(state.view_no, op_no, state.replica_no)) else None in
+  ({state with 
+    op_no = op_no;
+    log = log;
+    client_table = client_table;
+    queued_prepares = queued_prepares;
+   }, message_opt)
 
 let on_prepareok state v n i = 
   let f = ((List.length state.configuration) / 2) in
@@ -172,9 +177,46 @@ let on_commit state v k =
     mach = mach;
    }, None)
 
+  (* view change protocol implementation *)
+
+    (* HELPER FUNCTIONS BEGIN *)
+
+let notice_viewchange ?(increment=1) ?(no_startviewchanges=0) ?(doviewchange) state = 
+  let view_no = state.view_no + increment in 
+  let status = ViewChange in
+  let doviewchanges = 
+    match doviewchange with
+    | None -> []
+    | Some(d) -> [d] in
+  ({state with 
+    view_no = view_no;
+    status = status;
+    no_startviewchanges = no_startviewchanges;
+    doviewchanges = doviewchanges;
+   }, Some(StartViewChange(view_no, state.replica_no)))
+
+    (* HELPER FUNCTIONS END *)
+
+let on_startviewchange state v i =
+  if (v > state.view_no) then 
+    notice_viewchange ~increment:(v-state.view_no) ~no_startviewchanges:1 state
+  else 
+    let f = ((List.length state.configuration) / 2) in
+    let no_startviewchanges = state.no_startviewchanges + 1 in
+    let message_opt = 
+      if (no_startviewchanges = f) then 
+        Some(DoViewChange(state.view_no, state.log, state.last_normal_view_no, state.op_no, state.commit_no))
+      else
+        None in
+    ({state with 
+      no_startviewchanges = no_startviewchanges;
+     }, message_opt)
+      
 
 
 
 
 
-  
+
+
+
