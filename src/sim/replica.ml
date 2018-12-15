@@ -109,12 +109,12 @@ let on_prepare state v (op, c, s) n k =
   let log = List.append prepared state.log in
   let client_table = update_ct_reqs state.client_table (List.rev prepared) in
   let message_opt = if (op_no > state.op_no) then Some(PrepareOk(state.view_no, op_no, state.replica_no)) else None in
-  let state = {state with 
-               op_no = op_no;
-               log = log;
-               client_table = client_table;
-              } in 
-  (state, message_opt)
+  ({state with 
+    op_no = op_no;
+    log = log;
+    client_table = client_table;
+    queued_prepares = queued_prepares;
+   }, message_opt)
 
 let process_waiting_prepareoks f waiting_prepareoks = 
   let rec process_waiting_prepareoks rev_waiting_prepareoks n = 
@@ -125,9 +125,8 @@ let process_waiting_prepareoks f waiting_prepareoks =
         (w::rev_waiting_prepareoks, n)
       else 
         process_waiting_prepareoks rev_waiting_prepareoks (n+1) in
-  let no_waiting_prepareoks = List.length waiting_prepareoks in
   let (rev_waiting_prepareoks, rev_index) = process_waiting_prepareoks (List.rev waiting_prepareoks) (-1) in
-  (List.rev rev_waiting_prepareoks, no_waiting_prepareoks - 1 - rev_index)
+  (List.rev rev_waiting_prepareoks, (List.length waiting_prepareoks) - 1 - rev_index)
 
 let commit_all view_no mach ct reqs = 
   let rec commit_all mach ct reqs replies = 
@@ -147,25 +146,35 @@ let on_prepareok state v n i =
   let no_prepareoks_opt = List.nth state.waiting_prepareoks index in
   match no_prepareoks_opt with
   | None -> (* no log entry for that op number *)  assert(false)
-  | Some(no_prepareoks) ->
-    let no_prepareoks = no_prepareoks + 1 in
-    let waiting_prepareoks = List.mapi state.waiting_prepareoks (fun i w -> if i = index then no_prepareoks else w) in
-    let state = {state with 
-                 waiting_prepareoks = waiting_prepareoks;
-                } in
-    if (no_prepareoks = f) then 
-      let (waiting_prepareoks, commit_until) = process_waiting_prepareoks f waiting_prepareoks in 
-      let last_committed_index = (List.length state.log) - 1 - state.commit_no in
-      let to_commit = List.filteri state.log (fun i _ -> i < last_committed_index && i >= commit_until) in
-      let (mach, client_table, replies) = commit_all state.view_no state.mach state.client_table (List.rev to_commit) in
-      let commit_no = state.commit_no + (List.length to_commit) in
-      ({state with 
-        commit_no = commit_no;
-        client_table = client_table;
-        mach = mach;
-       }, List.map replies (fun r -> Some(r)))
-    else 
-      (state, [None])
+  | Some(_) ->
+    let waiting_prepareoks = List.mapi state.waiting_prepareoks (fun i w -> if i >= index then w+1 else w) in
+    let (waiting_prepareoks, commit_until) = process_waiting_prepareoks f waiting_prepareoks in 
+    let last_committed_index = (List.length state.log) - 1 - state.commit_no in
+    let to_commit = List.filteri state.log (fun i _ -> i < last_committed_index && i >= commit_until) in
+    let (mach, client_table, replies) = commit_all state.view_no state.mach state.client_table (List.rev to_commit) in
+    let commit_no = state.commit_no + (List.length to_commit) in
+    ({state with 
+      commit_no = commit_no;
+      client_table = client_table;
+      waiting_prepareoks = waiting_prepareoks;
+      mach = mach;
+     }, List.map replies (fun r -> Some(r)))
+
+let on_commit state v k = 
+  let commit_until = (List.length state.log) - 1 - k in
+  let last_committed_index = (List.length state.log) - 1 - state.commit_no in
+  let to_commit = List.filteri state.log (fun i _ -> i < last_committed_index && i >= commit_until) in
+  let (mach, client_table, _) = commit_all state.view_no state.mach state.client_table (List.rev to_commit) in
+  let commit_no = state.commit_no + (List.length to_commit) in
+  ({state with 
+    commit_no = commit_no;
+    client_table = client_table;
+    mach = mach;
+   }, None)
 
 
 
+
+
+
+  
