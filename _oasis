@@ -10,5 +10,5 @@ BuildDepends: core, threads
 
 Executable "simulation"
   Path: src/sim
-  MainIs: main.ml
+  MainIs: simulator.ml
   CompiledObject: best

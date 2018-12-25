@@ -1,3 +1,3 @@
 open Core
 open StateMachine
-open Replica
+open Protocol
