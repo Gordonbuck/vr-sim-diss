@@ -35,12 +35,12 @@ type client_state = {
   client_id : int;
   request_no : int;
 
-  next_op_index : int;
-  operations_to_do : StateMachine.operation list;
+  next_op_index : int; (* index of next operation to be sent in request*)
+  operations_to_do : StateMachine.operation list; (* list of operations client wants to perform *)
   
-  recovering : bool;
-  no_clientrecoveryresponses : int;
-  received_clientrecoveryresponses : bool list;
+  recovering : bool; (* indicates if the client is recovering from a crash or not *)
+  no_clientrecoveryresponses : int; (* the number of clientrecoverresponses received for current recovery *)
+  received_clientrecoveryresponses : bool list; (* for each replica indicates whether they have responded to recovery or not *)
 }
 
 type replica_state = {
@@ -53,20 +53,20 @@ type replica_state = {
   commit_no : int;
   client_table: (int * StateMachine.result option) list;
 
-  queued_prepares : (StateMachine.operation * int * int) option list;
-  waiting_prepareoks : int list;
-  casted_prepareoks : int list;
-  highest_seen_commit_no : int;
+  queued_prepares : (StateMachine.operation * int * int) option list; (* list of operations depending on previous operations not yet seen *)
+  waiting_prepareoks : int list; (* for each not yet committed operation, the number of prepareoks received *)
+  casted_prepareoks : int list; (* for each replica, the highest op_no seen in a prepareok message *)
+  highest_seen_commit_no : int; (* the higest commit_no seen in a prepare/commit message *)
 
-  no_startviewchanges : int;
-  received_startviewchanges : bool list;
-  doviewchanges : (int * (StateMachine.operation * int * int) list * int * int * int * int) list;
-  last_normal_view_no : int;
+  no_startviewchanges : int; (* number of startviewchange messages received from different replicas *)
+  received_startviewchanges : bool list; (* for each replica, indicates whether this has received a startviewchange from them *)
+  doviewchanges : (int * (StateMachine.operation * int * int) list * int * int * int * int) list; (* list of doviewchange messages received *)
+  last_normal_view_no : int; (* view_no of the last view for which status was normal *)
 
-  recovery_nonce : int;
-  no_recoveryresponses : int;
-  received_recoveryresponses : bool list;
-  primary_recoveryresponse : (int * int * (StateMachine.operation * int * int) list * int * int * int) option;
+  recovery_nonce : int; (* the nonce used in this replica's most recent recovery *)
+  no_recoveryresponses : int; (* number of recoveryresponse messages received from different replicas *)
+  received_recoveryresponses : bool list; (* for each replica, indicates whether this has received a recoveryresponse from them *)
+  primary_recoveryresponse : (int * int * (StateMachine.operation * int * int) list * int * int * int) option; (* recoveryresponse message from primary of latest view seen in recoveryresponse messages *)
 
   mach: StateMachine.t;
 }
@@ -123,11 +123,6 @@ let commit_all view_no mach ct reqs =
       commit_all mach ct reqs (Unicast(ClientMessage(Reply(view_no, s, res)), c)::replies)
     | _ -> (mach, ct, replies) in
   commit_all mach ct reqs []
-
-let rec received_doviewchange doviewchanges i = 
-  match doviewchanges with
-  | [] -> false
-  | (_, _, _, _, _, j)::doviewchanges -> if i = j then true else received_doviewchange doviewchanges i
 
     (* HELPER FUNCTIONS END *)
 
@@ -199,25 +194,21 @@ let on_prepareok state v n i =
       let no_waiting = List.length state.waiting_prepareoks in
       let index = state.commit_no + no_waiting - n in
       let last_casted_index = state.commit_no + no_waiting - casted_prepareok in
-      let no_prepareoks_opt = List.nth state.waiting_prepareoks index in
-      match no_prepareoks_opt with
-      | None -> (* no log entry for that op number *)  assert(false)
-      | Some(_) ->
-        let waiting_prepareoks = List.mapi state.waiting_prepareoks (fun i w -> if i >= index && i < last_casted_index then w+1 else w) in
-        let (waiting_prepareoks, commit_until) = process_waiting_prepareoks f waiting_prepareoks in 
-        let last_committed_index = (List.length state.log) - 1 - state.commit_no in
-        let to_commit = List.filteri state.log (fun i _ -> i < last_committed_index && i >= commit_until) in
-        let (mach, client_table, replies) = commit_all state.view_no state.mach state.client_table (List.rev to_commit) in
-        let commit_no = state.commit_no + (List.length to_commit) in
-        let comm_opt = if List.length replies > 0 then Some(MultiComm(replies)) else None in
-        let casted_prepareoks = List.mapi state.casted_prepareoks (fun idx c -> if idx = i then n else c) in
-        ({state with 
-          commit_no = commit_no;
-          client_table = client_table;
-          waiting_prepareoks = waiting_prepareoks;
-          casted_prepareoks = casted_prepareoks;
-          mach = mach;
-         }, comm_opt)
+      let waiting_prepareoks = List.mapi state.waiting_prepareoks (fun i w -> if i >= index && i < last_casted_index then w+1 else w) in
+      let (waiting_prepareoks, commit_until) = process_waiting_prepareoks f waiting_prepareoks in 
+      let last_committed_index = (List.length state.log) - 1 - state.commit_no in
+      let to_commit = List.filteri state.log (fun i _ -> i < last_committed_index && i >= commit_until) in
+      let (mach, client_table, replies) = commit_all state.view_no state.mach state.client_table (List.rev to_commit) in
+      let commit_no = state.commit_no + (List.length to_commit) in
+      let comm_opt = if List.length replies > 0 then Some(MultiComm(replies)) else None in
+      let casted_prepareoks = List.mapi state.casted_prepareoks (fun idx m -> if idx = i then n else m) in
+      ({state with 
+        commit_no = commit_no;
+        client_table = client_table;
+        waiting_prepareoks = waiting_prepareoks;
+        casted_prepareoks = casted_prepareoks;
+        mach = mach;
+       }, comm_opt)
 
 let on_commit state v k = 
   let k = max state.highest_seen_commit_no k in
@@ -251,6 +242,11 @@ let process_doviewchanges doviewchanges =
       process_doviewchanges doviewchanges log last_normal_view_no op_no commit_no in
   process_doviewchanges doviewchanges [] 0 0 0
 
+let rec received_doviewchange doviewchanges i = 
+  match doviewchanges with
+  | [] -> false
+  | (_, _, _, _, _, j)::doviewchanges -> if i = j then true else received_doviewchange doviewchanges i
+
     (* HELPER FUNCTIONS END *)
 
 let notice_viewchange state = 
@@ -282,7 +278,7 @@ let on_startviewchange state v i =
           Some(Unicast(ReplicaMessage(DoViewChange(state.view_no, state.log, state.last_normal_view_no, state.op_no, state.commit_no, state.replica_no)), primary_no))
         else
           None in
-      let received_startviewchanges = List.mapi state.received_startviewchanges (fun idx b -> if i = idx then true else b) in
+      let received_startviewchanges = List.mapi state.received_startviewchanges (fun idx b -> if idx = i then true else b) in
       ({state with 
         no_startviewchanges = no_startviewchanges;
         received_startviewchanges = received_startviewchanges;
@@ -307,6 +303,7 @@ let on_doviewchange state v l v' n k i =
       let (mach, client_table, replies) = commit_all view_no state.mach state.client_table (List.rev to_commit) in
       let waiting_prepareoks = List.init (op_no - commit_no) (fun _ -> 0) in
       let received_startviewchanges = List.map state.received_startviewchanges (fun _ -> false) in
+      let casted_prepareoks = List.map state.casted_prepareoks (fun _ -> commit_no) in
       ({state with 
         view_no = view_no;
         status = status;
@@ -316,6 +313,8 @@ let on_doviewchange state v l v' n k i =
         client_table = client_table;
         queued_prepares = [];
         waiting_prepareoks = waiting_prepareoks;
+        casted_prepareoks = casted_prepareoks;
+        highest_seen_commit_no = commit_no;
         no_startviewchanges = 0;
         received_startviewchanges = received_startviewchanges;
         doviewchanges = [];
@@ -338,28 +337,28 @@ let on_startview state v l n k =
   let to_commit = List.filteri state.log (fun i _ -> i < last_committed_index && i >= commit_until) in
   let (mach, client_table, _) = commit_all view_no state.mach state.client_table (List.rev to_commit) in
   let received_startviewchanges = List.map state.received_startviewchanges (fun _ -> false) in
-  let state = {state with 
-               view_no = view_no;
-               status = status;
-               op_no = op_no;
-               log = log;
-               commit_no = commit_no;
-               client_table = client_table;
-               queued_prepares = [];
-               waiting_prepareoks = [];
-               no_startviewchanges = 0;
-               received_startviewchanges = received_startviewchanges;
-               doviewchanges = [];
-               last_normal_view_no = view_no;
-               mach = mach;
-              } in
-  let primary_no = primary_no state.view_no state.configuration in
+  let primary_no = primary_no view_no state.configuration in
   let comm_opt = 
     if (commit_no < op_no) then
       Some(Unicast(ReplicaMessage(PrepareOk(view_no, op_no, state.replica_no)), primary_no))
     else
       None in
-  (state, comm_opt)
+  ({state with 
+    view_no = view_no;
+    status = status;
+    op_no = op_no;
+    log = log;
+    commit_no = commit_no;
+    client_table = client_table;
+    queued_prepares = [];
+    waiting_prepareoks = [];
+    highest_seen_commit_no = commit_no;
+    no_startviewchanges = 0;
+    received_startviewchanges = received_startviewchanges;
+    doviewchanges = [];
+    last_normal_view_no = view_no;
+    mach = mach;
+   }, comm_opt)
 
   (* recovery protocol implementation *)
 
@@ -386,7 +385,7 @@ let on_recovery state i x =
 let on_recoveryresponse state v x opt_p j = 
   if state.recovery_nonce <> x then
     (state, None)
-  else 
+  else
     let received_recoveryresponse_opt = List.nth state.received_recoveryresponses j in
     match received_recoveryresponse_opt with
     | None -> (* no such replica *) assert(false)
@@ -395,30 +394,17 @@ let on_recoveryresponse state v x opt_p j =
         (* already received a recovery response from this replica *)
         (state, None)
       else
-        let state = 
-          let received_recoveryresponses = List.mapi state.received_recoveryresponses (fun i b -> if i = j then true else b) in
-          let primary_recoveryresponse = 
-            match opt_p with
-            | Some(l, n, k) -> Some(v, x, l, n, k, j)
-            | None -> if v > state.view_no then None else state.primary_recoveryresponse in
-          let no_recoveryresponses = state.no_recoveryresponses + 1 in
-          if v < state.view_no then
-            {state with 
-             no_recoveryresponses = no_recoveryresponses;
-             received_recoveryresponses = received_recoveryresponses;
-            }
-          else
-            {state with 
-             view_no = v;
-             no_recoveryresponses = no_recoveryresponses;
-             received_recoveryresponses = received_recoveryresponses;
-             primary_recoveryresponse = primary_recoveryresponse;
-            } in
+        let no_recoveryresponses = state.no_recoveryresponses + 1 in
+        let received_recoveryresponses = List.mapi state.received_recoveryresponses (fun i b -> if i = j then true else b) in
+        let primary_recoveryresponse = 
+          match opt_p with
+          | Some(l, n, k) -> if v < state.view_no then state.primary_recoveryresponse else Some(v, x, l, n, k, j)
+          | None -> if v > state.view_no then None else state.primary_recoveryresponse in
+        let view_no = max v state.view_no in
         let f = ((List.length state.configuration) / 2) in
-        if state.no_recoveryresponses >= f+1 then
+        if no_recoveryresponses >= f+1 then
           match state.primary_recoveryresponse with
           | Some(v, x, l, n, k, j) ->
-            let view_no = v in
             let log = l in
             let op_no = n in
             let status = Normal in 
@@ -440,9 +426,19 @@ let on_recoveryresponse state v x opt_p j =
               primary_recoveryresponse = None;
               mach = mach;
              }, None)
-          | None -> (state, None)
+          | None -> ({state with 
+                      view_no = view_no;
+                      no_recoveryresponses = no_recoveryresponses;
+                      received_recoveryresponses = received_recoveryresponses;
+                      primary_recoveryresponse = primary_recoveryresponse;
+                     }, None)
         else
-          (state, None)
+          ({state with 
+            view_no = view_no;
+            no_recoveryresponses = no_recoveryresponses;
+            received_recoveryresponses = received_recoveryresponses;
+            primary_recoveryresponse = primary_recoveryresponse;
+           }, None)
     
   (* client recovery protocol implementation *)
     
@@ -453,39 +449,47 @@ let begin_clientrecovery state =
 
 let on_clientrecovery state c = 
   let v = state.view_no in
+  let i = state.replica_no in
   let opt = List.nth state.client_table c in
   match opt with 
   | None -> assert(false)
   | Some(s, res) ->
-    (state, Some(Unicast(ClientMessage(ClientRecoveryResponse(v, s, state.replica_no)), c)))
+    (state, Some(Unicast(ClientMessage(ClientRecoveryResponse(v, s, i)), c)))
 
 let on_clientrecoveryresponse (state : client_state) v s i = 
-  let received_clientrecoveryresponse_opt = List.nth state.received_clientrecoveryresponses i in
-  match received_clientrecoveryresponse_opt with
-  | None -> (* no such replica exists *) assert(false)
-  | Some(received_clientrecoveryresponse) -> 
-    if received_clientrecoveryresponse then
-      (state, None)
-    else
-      let f = ((List.length state.configuration) / 2) in
-      let no_clientrecoveryresponses = state.no_clientrecoveryresponses + 1 in
-      let request_no = if s > state.request_no then s else state.request_no in
-      let received_clientrecoveryresponses = List.map state.received_clientrecoveryresponses (fun _ -> false) in
-      if no_clientrecoveryresponses = f+1 then
-        ({state with 
-          view_no = v;
-          request_no = request_no + 2;
-          recovering = false;
-          no_clientrecoveryresponses = 0;
-          received_clientrecoveryresponses = received_clientrecoveryresponses;
-         }, None)
+  if not state.recovering then
+    (* client is not recovering *)
+    (state, None)
+  else
+    let received_clientrecoveryresponse_opt = List.nth state.received_clientrecoveryresponses i in
+    match received_clientrecoveryresponse_opt with
+    | None -> (* no such replica exists *) assert(false)
+    | Some(received_clientrecoveryresponse) -> 
+      if received_clientrecoveryresponse then
+        (* already received a clientrecoveryresponse from this replica *)
+        (state, None)
       else
-        let received_clientrecoveryresponses = List.mapi state.received_clientrecoveryresponses (fun idx b -> if idx = i then true else b) in
-        ({state with 
-          request_no = request_no;
-          no_clientrecoveryresponses = no_clientrecoveryresponses;
-          received_clientrecoveryresponses = received_clientrecoveryresponses;
-         }, None)
+        let f = ((List.length state.configuration) / 2) in
+        let no_clientrecoveryresponses = state.no_clientrecoveryresponses + 1 in
+        let request_no = max s state.request_no in
+        let view_no = max v state.view_no in
+        if no_clientrecoveryresponses = f+1 then
+          let received_clientrecoveryresponses = List.map state.received_clientrecoveryresponses (fun _ -> false) in
+          ({state with 
+            view_no = view_no;
+            request_no = request_no + 2;
+            recovering = false;
+            no_clientrecoveryresponses = 0;
+            received_clientrecoveryresponses = received_clientrecoveryresponses;
+           }, None)
+        else
+          let received_clientrecoveryresponses = List.mapi state.received_clientrecoveryresponses (fun idx b -> if idx = i then true else b) in
+          ({state with 
+            view_no = view_no;
+            request_no = request_no;
+            no_clientrecoveryresponses = no_clientrecoveryresponses;
+            received_clientrecoveryresponses = received_clientrecoveryresponses;
+           }, None)
       
   (* state transfer protocol implementation *)
 
@@ -531,8 +535,8 @@ let on_newstate state v l n k =
   (* client-side normal protocol implementation *)
 
 let on_reply state v s res = 
-  if s < state.request_no then
-    (* already received this reply *)
+  if s < state.request_no || state.recovering then
+    (* already received this reply or recovering so cant proceed *)
     (state, None)
   else
     let request_no = s + 1 in
@@ -627,7 +631,7 @@ let on_client_message state msg =
   | ClientRecoveryResponse(v, s, i) -> 
     on_clientrecoveryresponse state v s i
 
-  (* implementing timeouts *)
+  (* implementing state initialization/crash *)
 
 
 
