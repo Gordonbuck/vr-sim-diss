@@ -24,6 +24,19 @@ type message = ReplicaMessage of replica_message | ClientMessage of client_messa
 
 type communication = Unicast of message * int |  Broadcast of message | MultiComm of communication list
 
+type client_timeout = 
+  | RequestTimeout of int
+  | ClientRecoveryTimeout of int
+
+type replica_timeout = 
+  | PrimaryTimeout of int * int
+  | ClientTimeout of int
+  | PrepareTimeout of int
+  | StartViewChangeTimeout of int
+  | DoViewChangeTimeout of int
+  | RecoveryTimeout of int
+  | GetStateTimeout of int
+
 type status =
   | Normal
   | ViewChange
@@ -41,6 +54,8 @@ type client_state = {
   recovering : bool; (* indicates if the client is recovering from a crash or not *)
   no_clientrecoveryresponses : int; (* the number of clientrecoverresponses received for current recovery *)
   received_clientrecoveryresponses : bool list; (* for each replica indicates whether they have responded to recovery or not *)
+
+  valid_timeout : int; (* increment on replies and recovery *)
 }
 
 type replica_state = {
@@ -68,7 +83,11 @@ type replica_state = {
   received_recoveryresponses : bool list; (* for each replica, indicates whether this has received a recoveryresponse from them *)
   primary_recoveryresponse : (int * int * (StateMachine.operation * int * int) list * int * int * int) option; (* recoveryresponse message from primary of latest view seen in recoveryresponse messages *)
 
-  mach: StateMachine.t;
+  mach : StateMachine.t;
+
+  valid_timeout : int; (* increment on recovery and view change *)
+  no_primary_comms : int;
+  no_client_comms : int;
 }
 
   (* normal operation protocol implementation *)
@@ -549,16 +568,100 @@ let on_reply state v s res =
                  next_op_index = next_op_index;
                 } in
     match op_opt with
-    | None -> (state, None)
-    | Some(op) -> (state, Some(Unicast(ReplicaMessage(Request(op, state.client_id, request_no)), primary_no)))
+    | None -> (* no operations left *) (state, None)
+    | Some(op) -> (* send next request *) (state, Some(Unicast(ReplicaMessage(Request(op, state.client_id, request_no)), primary_no)))
 
-    (* tying protocol implementation together *)
+  (* timeouts *)
 
-(* perform status and view number checks here *)
+    (* HELPER FUNCTIONS BEGIN *)
+
+let map_falses l f =
+  let rec map_falses l f i acc = 
+    match l with
+    | [] -> acc
+    | (b::bs) -> if b then map_falses bs f (i+1) acc else map_falses bs f (i+1) ((f i)::acc) in
+  map_falses l f 0 []
+
+    (* HELPER FUNCTIONS END *)
+
+let on_request_timeout (state : client_state) = 
+  (* re-send request to all replicas *)
+  let op_opt = List.nth state.operations_to_do (state.next_op_index - 1) in
+  match op_opt with
+  | None -> (* no request to re-send *) assert(false)
+  | Some(op) ->
+    (* re-send request to all replicas *)
+    (state, Some(Broadcast(ReplicaMessage(Request(op, state.client_id, state.request_no)))))
+
+let on_clientrecovery_timeout (state : client_state) = 
+  (* re-send recovery message to non-responsive replicas *)
+  let comms = map_falses state.received_clientrecoveryresponses 
+      (fun i -> Unicast(ReplicaMessage(ClientRecovery(state.client_id)), i)) in
+  (state, Some(MultiComm(comms)))
+
+let on_primary_timeout state n = 
+  if state.no_primary_comms = n then
+    (* no communication from primary since last timeout check, start viewchange *)
+    notice_viewchange state
+  else
+    (state, None)
+
+let on_client_timeout state n = 
+  if state.no_client_comms = n then
+    (* send commit message as heartbeat *)
+    (state, Some(Broadcast(ReplicaMessage(Commit(state.view_no, state.commit_no)))))
+  else
+    (state, None)
+
+let on_prepare_timeout state n = 
+  if state.commit_no < n then
+    (* havent committed the operation yet *)
+    let req_opt = List.nth state.log n in
+    match req_opt with
+    | None -> (* no such request in log, should have been caught by valid timer tag *) assert(false)
+    | Some(req) ->
+      (* send prepare message to non-responsive replicas *)
+      let received_prepareoks = List.map state.casted_prepareoks (fun m -> m >= n) in
+      let comms = map_falses received_prepareoks 
+          (fun i -> Unicast(ReplicaMessage(Prepare(state.view_no, req, n, state.commit_no)), i)) in
+      (state, Some(MultiComm(comms)))
+  else
+    (state, None)
+
+let on_startviewchange_timeout state = 
+  (* re-send startviewchange messages to non-responsive replicas *)
+  let comms = map_falses state.received_startviewchanges 
+      (fun i -> Unicast(ReplicaMessage(StartViewChange(state.view_no, state.replica_no)), i)) in
+  (state, comms)
+
+let on_doviewchange_timeout state = 
+  (* re-send doviewchange message to primary *)
+  let primary_no = primary_no state.view_no state.configuration in
+  (state, Some(Unicast(ReplicaMessage(DoViewChange(state.view_no, state.log, state.last_normal_view_no, state.op_no, state.commit_no, state.replica_no)), primary_no)))
+
+let on_recovery_timeout state = 
+  (* re-send recovery messages to non-responsive replicas *)
+  let comms = map_falses state.received_recoveryresponses 
+      (fun i -> Unicast(ReplicaMessage(Recovery(state.replica_no, state.recovery_nonce)), i)) in
+  (state, comms)
+
+let on_getstate_timeout state n =
+  if state.op_no <= n then
+    (* havent updated log since request for more state, re-send request *)
+    let primary_no = primary_no state.view_no state.configuration in
+    (state, Some(Unicast(ReplicaMessage(GetState(state.view_no, state.op_no, state.replica_no)), primary_no)))
+  else
+    (state, None)
+
+  (* tying protocol implementation together *)
+
 let on_replica_message state msg = 
+  (* perform status and view number checks here *)
   match msg with
+  
   | Request(op, c, s) ->
     on_request state op c s
+
   | Prepare(v, m, n, k) -> 
     if state.status <> Normal || v < state.view_no then
       (state, None)
@@ -568,6 +671,7 @@ let on_replica_message state msg =
       let (state, comm_opt) = on_prepare state v m n k in
       let (state, _) = on_commit state v k in
       (state, comm_opt)
+
   | PrepareOk(v, n, i) -> 
     if state.status <> Normal || v < state.view_no then
       (state, None)
@@ -575,6 +679,7 @@ let on_replica_message state msg =
       later_view state v
     else
       on_prepareok state v n i 
+
   | Commit(v, k) -> 
     if state.status <> Normal || v < state.view_no then
       (state, None)
@@ -582,6 +687,7 @@ let on_replica_message state msg =
       later_view state v
     else
       on_commit state v k
+
   | StartViewChange(v, i) -> 
     if state.status = Recovering || v < state.view_no then
       (state, None)
@@ -589,6 +695,7 @@ let on_replica_message state msg =
       notice_viewchange state
     else
       on_startviewchange state v i
+
   | DoViewChange(v, l, v', n, k, i) -> 
     if state.status = Recovering || v < state.view_no then
       (state, None)
@@ -596,28 +703,34 @@ let on_replica_message state msg =
       notice_viewchange state
     else
       on_doviewchange state v l v' n k i
+
   | StartView(v, l, n, k) -> 
     if state.status = Recovering || v < state.view_no then
       (state, None)
     else
       on_startview state v l n k
+
   | Recovery(i, x) -> 
     if state.status <> Normal then
       (state, None)
     else
       on_recovery state i x
+
   | RecoveryResponse(v, x, opt, j) -> 
     if state.status <> Recovering then
       (state, None)
     else
       on_recoveryresponse state v x opt j
+
   | ClientRecovery(c) -> 
     on_clientrecovery state c
+
   | GetState(v, n', i) -> 
     if state.status <> Normal || state.view_no <> v then
       (state, None)
     else
       on_getstate state v n' i
+
   | NewState(v, l, n, k) -> 
     if state.status <> Normal || state.view_no <> v then
       (state, None)
@@ -626,12 +739,14 @@ let on_replica_message state msg =
 
 let on_client_message state msg =
   match msg with 
+  
   | Reply(v, s, res) -> 
     on_reply state v s res
+
   | ClientRecoveryResponse(v, s, i) -> 
     on_clientrecoveryresponse state v s i
 
-  (* implementing state initialization/crash *)
+
 
 
 
