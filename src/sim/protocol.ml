@@ -29,13 +29,16 @@ type client_timeout =
   | ClientRecoveryTimeout of int
 
 type replica_timeout = 
+  | HeartbeatTimeout of int * int
+  | PrepareTimeout of int * int
   | PrimaryTimeout of int * int
-  | ClientTimeout of int
-  | PrepareTimeout of int
+  | StateTransferTimeout of int * int
   | StartViewChangeTimeout of int
   | DoViewChangeTimeout of int
   | RecoveryTimeout of int
-  | GetStateTimeout of int
+  | GetStateTimeout of int * int
+
+type timeout = ReplicaTimeout of int * replica_timeout | ClientTimeout of int * client_timeout
 
 type status =
   | Normal
@@ -87,7 +90,6 @@ type replica_state = {
 
   valid_timeout : int; (* increment on recovery and view change *)
   no_primary_comms : int;
-  no_client_comms : int;
 }
 
   (* normal operation protocol implementation *)
@@ -154,30 +156,37 @@ let on_request state op c s =
       if (cte_s = s) then
         (* request already being/been executed, try to return result *)
         match res_opt with
-        | None -> (* no result to return *) (state, None)
-        | Some(res) -> (* return result for most recent operation *) (state, Some(Unicast(ClientMessage(Reply(state.view_no, s, res)), c)))
+        | None -> (* no result to return *) (state, None, [])
+        | Some(res) -> (* return result for most recent operation *) 
+          (state, Some(Unicast(ClientMessage(Reply(state.view_no, s, res)), c)), [])
       else if (cte_s > s) then
         (* begin protocol to execute new request *)
         let op_no = state.op_no + 1 in
         let log = (op, c, s)::state.log in
         let client_table = update_ct state.client_table c s in
         let waiting_prepareoks = 0::state.waiting_prepareoks in
+        let prepare_timeout = PrepareTimeout(state.valid_timeout, op_no) in
+        let heartbeat_timeout = HeartbeatTimeout(state.valid_timeout, op_no) in
         ({state with 
           op_no = op_no;
           log = log;
           client_table = client_table;
           waiting_prepareoks = waiting_prepareoks;
-         }, Some(Broadcast(ReplicaMessage(Prepare(state.view_no, (op, c, s), op_no, state.commit_no)))))
+         }, Some(Broadcast(ReplicaMessage(Prepare(state.view_no, (op, c, s), op_no, state.commit_no)))), 
+         [ReplicaTimeout(state.replica_no, heartbeat_timeout), ReplicaTimeout(state.replica_no, prepare_timeout)])
       else
-        (* drop request *) (state, None)
+        (* drop request *) (state, None, [])
   else
-    (state, None)
+    (state, None, [])
 
 let on_prepare state v (op, c, s) n k = 
+  let state = {state with no_primary_comms = state.no_primary_comms+1;} in
   let primary_no = primary_no state.view_no state.configuration in
+  let primary_timeout = PrimaryTimeout(state.valid_timeout, state.no_primary_comms) in
   if state.op_no >= n then
     (* already prepared request so re-send prepareok *)
-    (state, Some(Unicast(ReplicaMessage(PrepareOk(state.view_no, state.op_no, state.replica_no)), primary_no)))
+    (state, Some(Unicast(ReplicaMessage(PrepareOk(state.view_no, state.op_no, state.replica_no)), primary_no)),
+     [ReplicaTimeout(state.replica_no, primary_timeout)])
   else
     (* try to prepare request, may not be able to without earlier requests, and send prepareok if prepared anything *)
     let no_queued = List.length state.queued_prepares in
@@ -192,13 +201,17 @@ let on_prepare state v (op, c, s) n k =
     let log = List.append prepared state.log in
     let client_table = update_ct_reqs state.client_table (List.rev prepared) in
     let comm_opt = 
-      if op_no > state.op_no then Some(Unicast(ReplicaMessage(PrepareOk(state.view_no, op_no, state.replica_no)), primary_no)) else None in
+      if op_no > state.op_no then Some(Unicast(ReplicaMessage(PrepareOk(state.view_no, op_no, state.replica_no)), primary_no)) 
+      else None in
+    let statetransfer_timeout_l = 
+      if op_no > state.op_no then [] else [ReplicaTimeout(state.replica_no, StateTransferTimeout(state.valid_timeout, state.op_no))] in
     ({state with 
       op_no = op_no;
       log = log;
       client_table = client_table;
       queued_prepares = queued_prepares;
-     }, comm_opt)
+     }, comm_opt, 
+     (ReplicaTimeout(state.replica_no, primary_timeout))::statetransfer_timeout_l)
 
 let on_prepareok state v n i = 
   let casted_prepareok_opt = List.nth state.casted_prepareoks i in
@@ -207,7 +220,7 @@ let on_prepareok state v n i =
   | Some(casted_prepareok) ->
     if casted_prepareok >= n || state.commit_no >= n then
       (* either already received a prepareok from this replica or already committed operation *)
-      (state, None)
+      (state, None, [])
     else
       let f = ((List.length state.configuration) / 2) in
       let no_waiting = List.length state.waiting_prepareoks in
@@ -227,9 +240,10 @@ let on_prepareok state v n i =
         waiting_prepareoks = waiting_prepareoks;
         casted_prepareoks = casted_prepareoks;
         mach = mach;
-       }, comm_opt)
+       }, comm_opt, [])
 
 let on_commit state v k = 
+  let state = {state with no_primary_comms = state.no_primary_comms+1;} in
   let k = max state.highest_seen_commit_no k in
   let commit_until = (List.length state.log) - 1 - k in
   let last_committed_index = (List.length state.log) - 1 - state.commit_no in
@@ -241,7 +255,8 @@ let on_commit state v k =
     client_table = client_table;
     highest_seen_commit_no = k;
     mach = mach;
-   }, None)
+   }, None, 
+   [ReplicaTimeout(state.replica_no, PrimaryTimeout(state.valid_timeout, state.no_primary_comms))])
 
   (* view change protocol implementation *)
 
@@ -273,12 +288,15 @@ let notice_viewchange state =
   let status = ViewChange in
   let no_startviewchanges = 0 in
   let received_startviewchanges = List.map state.received_startviewchanges (fun _ -> false) in
+  let valid_timeout = state.valid_timeout + 1 in
   ({state with 
     view_no = view_no;
     status = status;
     no_startviewchanges = no_startviewchanges;
     received_startviewchanges = received_startviewchanges;
-   }, Some(Broadcast(ReplicaMessage(StartViewChange(view_no, state.replica_no)))))
+    valid_timeout = valid_timeout;
+   }, Some(Broadcast(ReplicaMessage(StartViewChange(view_no, state.replica_no)))),
+   [ReplicaTimeout(state.replica_no, StartViewChangeTimeout(valid_timeout))])
 
 let on_startviewchange state v i =
   let received_startviewchange_opt = List.nth state.received_startviewchanges i in
@@ -287,27 +305,37 @@ let on_startviewchange state v i =
   | Some(received_startviewchange) ->
     if received_startviewchange then
       (* already received a startviewchange from this replica*)
-      (state, None)
+      (state, None, [])
     else
       let f = ((List.length state.configuration) / 2) in
       let no_startviewchanges = state.no_startviewchanges + 1 in
       let primary_no = primary_no state.view_no state.configuration in
       let comm_opt = 
         if (no_startviewchanges = f) then 
-          Some(Unicast(ReplicaMessage(DoViewChange(state.view_no, state.log, state.last_normal_view_no, state.op_no, state.commit_no, state.replica_no)), primary_no))
+          Some(Unicast(ReplicaMessage(DoViewChange(
+              state.view_no, state.log, state.last_normal_view_no, state.op_no, state.commit_no, state.replica_no)), primary_no))
         else
           None in
       let received_startviewchanges = List.mapi state.received_startviewchanges (fun idx b -> if idx = i then true else b) in
+      let doviewchange_timeout_l = 
+        if (no_startviewchanges = f) then
+          [ReplicaTimeout(state.replica_no, DoViewChangeTimeout(state.valid_timeout)), 
+           ReplicaTimeout(state.replica_no, PrimaryTimeout(state.valid_timeout, state.no_primary_comms))]
+        else [] in
       ({state with 
         no_startviewchanges = no_startviewchanges;
         received_startviewchanges = received_startviewchanges;
-       }, comm_opt)
+       }, comm_opt, doviewchange_timeout_l)
 
 let on_doviewchange state v l v' n k i = 
   let received_doviewchange = received_doviewchange state.doviewchanges i in
   if received_doviewchange then
     (* already received a doviewchange message from this replica *)
-    (state, None)
+    if state.status = Normal then
+      (* recovered, re-send startview message *)
+      (state, Some(Unicast(ReplicaMessage(StartView(state.view_no, state.log, state.op_no, state.commit_no)), i)), [])
+    else
+      (state, None, [])
   else  
     let f = ((List.length state.configuration) / 2) in
     let no_doviewchanges = (List.length state.doviewchanges) + 1 in
@@ -323,6 +351,7 @@ let on_doviewchange state v l v' n k i =
       let waiting_prepareoks = List.init (op_no - commit_no) (fun _ -> 0) in
       let received_startviewchanges = List.map state.received_startviewchanges (fun _ -> false) in
       let casted_prepareoks = List.map state.casted_prepareoks (fun _ -> commit_no) in
+      let valid_timeout = state.valid_timeout + 1 in
       ({state with 
         view_no = view_no;
         status = status;
@@ -339,11 +368,14 @@ let on_doviewchange state v l v' n k i =
         doviewchanges = [];
         last_normal_view_no = view_no;
         mach = mach;
-       }, Some(MultiComm(Broadcast(ReplicaMessage(StartView(view_no, log, op_no, commit_no)))::replies)))
+        valid_timeout = valid_timeout;
+        no_primary_comms = 0;
+       }, Some(MultiComm(Broadcast(ReplicaMessage(StartView(view_no, log, op_no, commit_no)))::replies)),
+       [ReplicaTimeout(state.replica_no, HeartbeatTimeout(state.replica_no, op_no))])
     else 
       ({state with 
         doviewchanges = doviewchanges;
-       }, None)
+       }, None, [])
 
 let on_startview state v l n k = 
   let view_no = v in
@@ -362,6 +394,7 @@ let on_startview state v l n k =
       Some(Unicast(ReplicaMessage(PrepareOk(view_no, op_no, state.replica_no)), primary_no))
     else
       None in
+  let valid_timeout = state.valid_timeout + 1 in
   ({state with 
     view_no = view_no;
     status = status;
@@ -377,7 +410,9 @@ let on_startview state v l n k =
     doviewchanges = [];
     last_normal_view_no = view_no;
     mach = mach;
-   }, comm_opt)
+    valid_timeout = valid_timeout;
+    no_primary_comms = 0;
+   }, comm_opt, [ReplicaTimeout(state.replica_no, PrimaryTimeout(valid_timeout, 0))])
 
   (* recovery protocol implementation *)
 
@@ -385,10 +420,13 @@ let begin_recovery state =
   let status = Recovering in
   let i = state.replica_no in
   let x = state.recovery_nonce + 1 in
+  let valid_timeout = state.valid_timeout + 1 in
   ({state with 
     status = status;
     recovery_nonce = x;
-   }, Some(Broadcast(ReplicaMessage(Recovery(i, x)))))
+    valid_timeout = valid_timeout;
+   }, Some(Broadcast(ReplicaMessage(Recovery(i, x)))),
+   [ReplicaTimeout(state.replica_no, RecoveryTimeout(valid_timeout))])
 
 let on_recovery state i x =
   let v = state.view_no in
@@ -403,7 +441,7 @@ let on_recovery state i x =
 
 let on_recoveryresponse state v x opt_p j = 
   if state.recovery_nonce <> x then
-    (state, None)
+    (state, None, [])
   else
     let received_recoveryresponse_opt = List.nth state.received_recoveryresponses j in
     match received_recoveryresponse_opt with
@@ -411,7 +449,7 @@ let on_recoveryresponse state v x opt_p j =
     | Some(received_recoveryresponse) ->
       if received_recoveryresponse then
         (* already received a recovery response from this replica *)
-        (state, None)
+        (state, None, [])
       else
         let no_recoveryresponses = state.no_recoveryresponses + 1 in
         let received_recoveryresponses = List.mapi state.received_recoveryresponses (fun i b -> if i = j then true else b) in
@@ -433,6 +471,7 @@ let on_recoveryresponse state v x opt_p j =
             let to_commit = List.filteri state.log (fun i _ -> i < last_committed_index && i >= commit_until) in
             let (mach, client_table, _) = commit_all view_no state.mach state.client_table (List.rev to_commit) in
             let received_recoveryresponses = List.map state.received_recoveryresponses (fun _ -> false) in
+            let valid_timeout = state.valid_timeout + 1 in
             ({state with 
               view_no = view_no;
               log = log;
@@ -444,27 +483,32 @@ let on_recoveryresponse state v x opt_p j =
               received_recoveryresponses = received_recoveryresponses;
               primary_recoveryresponse = None;
               mach = mach;
-             }, None)
+              valid_timeout = valid_timeout;
+              no_primary_comms = 0;
+             }, None, [ReplicaTimeout(state.replica_no, PrimaryTimeout(valid_timeout, 0))])
           | None -> ({state with 
                       view_no = view_no;
                       no_recoveryresponses = no_recoveryresponses;
                       received_recoveryresponses = received_recoveryresponses;
                       primary_recoveryresponse = primary_recoveryresponse;
-                     }, None)
+                     }, None, [])
         else
           ({state with 
             view_no = view_no;
             no_recoveryresponses = no_recoveryresponses;
             received_recoveryresponses = received_recoveryresponses;
             primary_recoveryresponse = primary_recoveryresponse;
-           }, None)
+           }, None, [])
     
   (* client recovery protocol implementation *)
     
-let begin_clientrecovery state = 
+let begin_clientrecovery (state : client_state) = 
+  let valid_timeout = state.valid_timeout + 1 in
   ({state with 
     recovering = true;
-   }, Some(Broadcast(ReplicaMessage(ClientRecovery(state.client_id)))))
+    valid_timeout = valid_timeout;
+   }, Some(Broadcast(ReplicaMessage(ClientRecovery(state.client_id)))),
+   [ClientTimeout(state.client_id, ClientRecoveryTimeout(valid_timeout))])
 
 let on_clientrecovery state c = 
   let v = state.view_no in
@@ -473,12 +517,12 @@ let on_clientrecovery state c =
   match opt with 
   | None -> assert(false)
   | Some(s, res) ->
-    (state, Some(Unicast(ClientMessage(ClientRecoveryResponse(v, s, i)), c)))
+    (state, Some(Unicast(ClientMessage(ClientRecoveryResponse(v, s, i)), c)), [])
 
 let on_clientrecoveryresponse (state : client_state) v s i = 
   if not state.recovering then
     (* client is not recovering *)
-    (state, None)
+    (state, None, [])
   else
     let received_clientrecoveryresponse_opt = List.nth state.received_clientrecoveryresponses i in
     match received_clientrecoveryresponse_opt with
@@ -486,7 +530,7 @@ let on_clientrecoveryresponse (state : client_state) v s i =
     | Some(received_clientrecoveryresponse) -> 
       if received_clientrecoveryresponse then
         (* already received a clientrecoveryresponse from this replica *)
-        (state, None)
+        (state, None, [])
       else
         let f = ((List.length state.configuration) / 2) in
         let no_clientrecoveryresponses = state.no_clientrecoveryresponses + 1 in
@@ -494,13 +538,15 @@ let on_clientrecoveryresponse (state : client_state) v s i =
         let view_no = max v state.view_no in
         if no_clientrecoveryresponses = f+1 then
           let received_clientrecoveryresponses = List.map state.received_clientrecoveryresponses (fun _ -> false) in
+          let valid_timeout = state.valid_timeout + 1 in
           ({state with 
             view_no = view_no;
             request_no = request_no + 2;
             recovering = false;
             no_clientrecoveryresponses = 0;
             received_clientrecoveryresponses = received_clientrecoveryresponses;
-           }, None)
+            valid_timeout = valid_timeout;
+           }, None, [])
         else
           let received_clientrecoveryresponses = List.mapi state.received_clientrecoveryresponses (fun idx b -> if idx = i then true else b) in
           ({state with 
@@ -508,33 +554,36 @@ let on_clientrecoveryresponse (state : client_state) v s i =
             request_no = request_no;
             no_clientrecoveryresponses = no_clientrecoveryresponses;
             received_clientrecoveryresponses = received_clientrecoveryresponses;
-           }, None)
+           }, None, [])
       
   (* state transfer protocol implementation *)
 
 let begin_statetransfer state = 
   let primary_no = primary_no state.view_no state.configuration in
-  (state, Some(Unicast(ReplicaMessage(GetState(state.view_no, state.op_no, state.replica_no)), primary_no)))
+  (state, Some(Unicast(ReplicaMessage(GetState(state.view_no, state.op_no, state.replica_no)), primary_no)),
+   [ReplicaTimeout(state.replica_no, GetStateTimeout(state.valid_timeout, state.op_no))])
 
 let later_view state v = 
   let op_no = state.commit_no in
   let remove_until = state.op_no - state.commit_no in
   let log = List.drop state.log remove_until in
+  let valid_timeout = state.valid_timeout + 1 in
   begin_statetransfer {state with 
     view_no = v;
     op_no = op_no;
     log = log;
+    valid_timeout = valid_timeout;
    }
 
 let on_getstate state v n' i = 
   let take_until = state.op_no - n' in
   let log = List.take state.log take_until in
-  (state, Some(Unicast(ReplicaMessage(NewState(state.view_no, log, state.op_no, state.commit_no)), i)))
+  (state, Some(Unicast(ReplicaMessage(NewState(state.view_no, log, state.op_no, state.commit_no)), i)), [])
 
 let on_newstate state v l n k =
   if n <= state.op_no then
     (* replica has already got this state *)
-    (state, None)
+    (state, None, [])
   else
     let log = List.append l state.log in
     let commit_until = (List.length log) - 1 - k in
@@ -549,27 +598,30 @@ let on_newstate state v l n k =
       queued_prepares = [];
       waiting_prepareoks = [];
       mach = mach;
-     }, None)
+     }, None, [ReplicaTimeout(state.valid_timeout, PrimaryTimeout(state.valid_timeout, n))])
 
   (* client-side normal protocol implementation *)
 
 let on_reply state v s res = 
   if s < state.request_no || state.recovering then
     (* already received this reply or recovering so cant proceed *)
-    (state, None)
+    (state, None, [])
   else
     let request_no = s + 1 in
     let op_opt = List.nth state.operations_to_do state.next_op_index in
     let next_op_index = state.next_op_index + 1 in
     let primary_no = primary_no v state.configuration in
+    let valid_timeout = state.valid_timeout + 1 in
     let state = {state with 
                  request_no = request_no;
                  view_no = v;
                  next_op_index = next_op_index;
+                 valid_timeout = valid_timeout;
                 } in
     match op_opt with
-    | None -> (* no operations left *) (state, None)
-    | Some(op) -> (* send next request *) (state, Some(Unicast(ReplicaMessage(Request(op, state.client_id, request_no)), primary_no)))
+    | None -> (* no operations left *) (state, None, [])
+    | Some(op) -> (* send next request *) (state, Some(Unicast(ReplicaMessage(Request(op, state.client_id, request_no)), primary_no)),
+                                           [ClientTimeout(state.client_id, RequestTimeout(valid_timeout))])
 
   (* timeouts *)
 
@@ -591,27 +643,25 @@ let on_request_timeout (state : client_state) =
   | None -> (* no request to re-send *) assert(false)
   | Some(op) ->
     (* re-send request to all replicas *)
-    (state, Some(Broadcast(ReplicaMessage(Request(op, state.client_id, state.request_no)))))
+    let valid_timeout = state.valid_timeout + 1 in
+    ({state with 
+      valid_timeout = valid_timeout;
+     }, Some(Broadcast(ReplicaMessage(Request(op, state.client_id, state.request_no)))), 
+     [ClientTimeout(state.client_id, RequestTimeout(valid_timeout))])
 
 let on_clientrecovery_timeout (state : client_state) = 
   (* re-send recovery message to non-responsive replicas *)
   let comms = map_falses state.received_clientrecoveryresponses 
       (fun i -> Unicast(ReplicaMessage(ClientRecovery(state.client_id)), i)) in
-  (state, Some(MultiComm(comms)))
+  (state, Some(MultiComm(comms)), [ClientTimeout(state.client_id, ClientRecoveryTimeout(state.valid_timeout))])
 
-let on_primary_timeout state n = 
-  if state.no_primary_comms = n then
-    (* no communication from primary since last timeout check, start viewchange *)
-    notice_viewchange state
-  else
-    (state, None)
-
-let on_client_timeout state n = 
-  if state.no_client_comms = n then
+let on_heartbeat_timeout state n = 
+  if state.op_no = n then
     (* send commit message as heartbeat *)
-    (state, Some(Broadcast(ReplicaMessage(Commit(state.view_no, state.commit_no)))))
+    (state, Some(Broadcast(ReplicaMessage(Commit(state.view_no, state.commit_no)))),
+     [ReplicaTimeout(state.replica_no, HeartbeatTimeout(state.valid_timeout, state.op_no))])
   else
-    (state, None)
+    (state, None, [])
 
 let on_prepare_timeout state n = 
   if state.commit_no < n then
@@ -624,37 +674,55 @@ let on_prepare_timeout state n =
       let received_prepareoks = List.map state.casted_prepareoks (fun m -> m >= n) in
       let comms = map_falses received_prepareoks 
           (fun i -> Unicast(ReplicaMessage(Prepare(state.view_no, req, n, state.commit_no)), i)) in
-      (state, Some(MultiComm(comms)))
+      let prepare_timeout = PrepareTimeout(state.valid_timeout, n) in
+      (state, Some(MultiComm(comms)), [ReplicaTimeout(state.valid_timeout, prepare_timeout)])
   else
-    (state, None)
+    (state, None, [])
+
+let on_primary_timeout state n = 
+  if state.no_primary_comms = n then
+    (* no communication from primary since last timeout check, start viewchange *)
+    notice_viewchange state
+  else
+    (state, None, [])
+
+let on_statetransfer_timeout state n = 
+  if state.op_no <= n then
+    (* haven't received missing prepare message, initiate state transfer *)
+    begin_statetransfer state
+  else
+    (state, None, [])
 
 let on_startviewchange_timeout state = 
   (* re-send startviewchange messages to non-responsive replicas *)
   let comms = map_falses state.received_startviewchanges 
       (fun i -> Unicast(ReplicaMessage(StartViewChange(state.view_no, state.replica_no)), i)) in
-  (state, comms)
+  (state, comms, [ReplicaTimeout(state.replica_no, StartViewChangeTimeout(state.valid_timeout))])
 
 let on_doviewchange_timeout state = 
   (* re-send doviewchange message to primary *)
   let primary_no = primary_no state.view_no state.configuration in
-  (state, Some(Unicast(ReplicaMessage(DoViewChange(state.view_no, state.log, state.last_normal_view_no, state.op_no, state.commit_no, state.replica_no)), primary_no)))
+  (state, Some(Unicast(ReplicaMessage(DoViewChange(
+       state.view_no, state.log, state.last_normal_view_no, state.op_no, state.commit_no, state.replica_no)), primary_no)),
+   [ReplicaTimeout(state.replica_no, DoViewChangeTimeout(state.valid_timeout))])
 
 let on_recovery_timeout state = 
   (* re-send recovery messages to non-responsive replicas *)
   let comms = map_falses state.received_recoveryresponses 
       (fun i -> Unicast(ReplicaMessage(Recovery(state.replica_no, state.recovery_nonce)), i)) in
-  (state, comms)
+  (state, comms, [ReplicaTimeout(state.replica_no, RecoveryTimeout(state.valid_timeout))])
 
 let on_getstate_timeout state n =
   if state.op_no <= n then
     (* havent updated log since request for more state, re-send request *)
     let primary_no = primary_no state.view_no state.configuration in
-    (state, Some(Unicast(ReplicaMessage(GetState(state.view_no, state.op_no, state.replica_no)), primary_no)))
+    (state, Some(Unicast(ReplicaMessage(GetState(state.view_no, state.op_no, state.replica_no)), primary_no)),
+     [ReplicaTimeout(state.replica_no, GetStateTimeout(state.valid_timeout, state.op_no))])
   else
-    (state, None)
+    (state, None, [])
 
   (* tying protocol implementation together *)
-
+      (*
 let on_replica_message state msg = 
   (* perform status and view number checks here *)
   match msg with
@@ -746,7 +814,7 @@ let on_client_message state msg =
   | ClientRecoveryResponse(v, s, i) -> 
     on_clientrecoveryresponse state v s i
 
-
+*)
 
 
 
