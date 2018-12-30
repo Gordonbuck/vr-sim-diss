@@ -501,7 +501,26 @@ let on_recoveryresponse state v x opt_p j =
            }, None, [])
     
   (* client recovery protocol implementation *)
-    
+
+    (* HELPER FUNCTIONS BEGIN *)
+
+let start_sending (state : client_state) = 
+  let op_opt = List.nth state.operations_to_do state.next_op_index in
+  let next_op_index = state.next_op_index + 1 in
+  let primary_no = primary_no state.view_no state.configuration in
+  let request_no = state.request_no + 1 in
+  let state = {state with 
+               request_no = request_no;
+               next_op_index = next_op_index;
+              } in
+  match op_opt with
+  | None -> (* no operations left *) (state, None, [])
+  | Some(op) -> (* send next request *) (state, 
+                                         Some(Unicast(ReplicaMessage(Request(op, state.client_id, request_no)), primary_no)),
+                                         [ClientTimeout(state.client_id, RequestTimeout(state.valid_timeout))])
+
+    (* HELPER FUNCTIONS END*)
+
 let begin_clientrecovery (state : client_state) = 
   let valid_timeout = state.valid_timeout + 1 in
   ({state with 
@@ -539,14 +558,15 @@ let on_clientrecoveryresponse (state : client_state) v s i =
         if no_clientrecoveryresponses = f+1 then
           let received_clientrecoveryresponses = List.map state.received_clientrecoveryresponses (fun _ -> false) in
           let valid_timeout = state.valid_timeout + 1 in
-          ({state with 
-            view_no = view_no;
-            request_no = request_no + 2;
-            recovering = false;
-            no_clientrecoveryresponses = 0;
-            received_clientrecoveryresponses = received_clientrecoveryresponses;
-            valid_timeout = valid_timeout;
-           }, None, [])
+          let state = {state with 
+                       view_no = view_no;
+                       request_no = request_no + 1;
+                       recovering = false;
+                       no_clientrecoveryresponses = 0;
+                       received_clientrecoveryresponses = received_clientrecoveryresponses;
+                       valid_timeout = valid_timeout;
+                      } in
+          start_sending state
         else
           let received_clientrecoveryresponses = List.mapi state.received_clientrecoveryresponses (fun idx b -> if idx = i then true else b) in
           ({state with 
@@ -607,21 +627,9 @@ let on_reply state v s res =
     (* already received this reply or recovering so cant proceed *)
     (state, None, [])
   else
-    let request_no = s + 1 in
-    let op_opt = List.nth state.operations_to_do state.next_op_index in
-    let next_op_index = state.next_op_index + 1 in
-    let primary_no = primary_no v state.configuration in
     let valid_timeout = state.valid_timeout + 1 in
-    let state = {state with 
-                 request_no = request_no;
-                 view_no = v;
-                 next_op_index = next_op_index;
-                 valid_timeout = valid_timeout;
-                } in
-    match op_opt with
-    | None -> (* no operations left *) (state, None, [])
-    | Some(op) -> (* send next request *) (state, Some(Unicast(ReplicaMessage(Request(op, state.client_id, request_no)), primary_no)),
-                                           [ClientTimeout(state.client_id, RequestTimeout(valid_timeout))])
+    let state = {state with valid_timeout = valid_timeout;} in
+    start_sending state
 
   (* timeouts *)
 
