@@ -1,16 +1,21 @@
 open Core
 open Protocol
+open Parameters
 open EventList
 
-module Create (P : Protocol_type) = struct
+module Create (P : Protocol_type) 
+    (Params : Parameters_type 
+     with type replica_timeout := P.replica_timeout 
+     with type client_timeout := P.client_timeout) = struct
 
   module T = SimTime
   module EL = EventHeap
 
   type sim_event = Crash | Recover
 
-  type replica_state =  { crashed : bool; protocol_state: P.replica_state }
-  type client_state = { crashed : bool; protocol_state: P.client_state }
+  type 'protocol_state state = { alive : bool; protocol_state: 'protocol_state }
+  type replica_state =  P.replica_state state
+  type client_state = P.client_state state
 
   type event = 
     | ReplicaEvent of T.t * int * (replica_state -> replica_state * event list)
@@ -23,20 +28,17 @@ module Create (P : Protocol_type) = struct
 
   let compare_events e1 e2 = T.compare (time_of_event e1) (time_of_event e2)
 
-  type parameters = { timeout_delay : T.span; msg_delay : T.span; n_replicas : int; n_clients : int; }
-  let params = { timeout_delay = T.span_of_int 10; msg_delay = T.span_of_int 10; n_replicas = 10; n_clients = 10; }
-
   let rec build_replica_msg_event t i msg = 
-    let t = T.inc t params.msg_delay in
+    let t = T.inc t (T.span_of_int (Params.packet_delay ())) in
     ReplicaEvent(t, i, replica_protocol_event t (P.on_replica_message msg))
   and build_client_msg_event t i msg = 
-    let t = T.inc t params.msg_delay in
+    let t = T.inc t (T.span_of_int (Params.packet_delay ())) in
     ClientEvent(t, i, client_protocol_event t (P.on_client_message msg))
   and build_replica_timeout_event t i timeout =  
-    let t = T.inc t params.timeout_delay in
+    let t = T.inc t (T.span_of_int (Params.time_for_replica_timeout timeout)) in
     ReplicaEvent(t, i, replica_protocol_event t (P.on_replica_timeout timeout))
   and build_client_timeout_event t i timeout = 
-    let t = T.inc t params.timeout_delay in
+    let t = T.inc t (T.span_of_int (Params.time_for_client_timeout timeout)) in
     ClientEvent(t, i, client_protocol_event t (P.on_client_timeout timeout))
 
   and timeout_to_event t timeout = 
@@ -51,8 +53,8 @@ module Create (P : Protocol_type) = struct
 
   and broadcast_msg_to_events t msg = 
     match msg with
-    | P.ReplicaMessage(msg) -> List.init params.n_replicas (fun i -> build_replica_msg_event t i msg)
-    | P.ClientMessage(msg) -> List.init params.n_clients (fun i -> build_client_msg_event t i msg)
+    | P.ReplicaMessage(msg) -> List.init (Params.n_replicas) (fun i -> build_replica_msg_event t i msg)
+    | P.ClientMessage(msg) -> List.init (Params.n_clients) (fun i -> build_client_msg_event t i msg)
 
   and comm_to_events t comm = 
     match comm with
@@ -73,7 +75,7 @@ module Create (P : Protocol_type) = struct
     pete pevents []
 
   and replica_protocol_event t comp state = 
-    if state.crashed then
+    if not state.alive then
       (state, [])
     else
       let (protocol_state, pevents) = comp state.protocol_state in
@@ -83,7 +85,7 @@ module Create (P : Protocol_type) = struct
        }, events)
 
   and client_protocol_event t comp state = 
-    if state.crashed then
+    if not state.alive then
       (state, [])
     else
       let (protocol_state, pevents) = comp state.protocol_state in
@@ -91,5 +93,103 @@ module Create (P : Protocol_type) = struct
       ({state with 
         protocol_state = protocol_state;
        }, events)
-  
+
+  let crash_replica state = 
+    let protocol_state = P.crash_replica state.protocol_state in
+    {alive = false; protocol_state = protocol_state;}
+
+  let crash_client state = 
+    let protocol_state = P.crash_client state.protocol_state in
+    {alive = false; protocol_state = protocol_state;}
+
+  let recover_replica t state = 
+    let (protocol_state, pevents) = P.recover_replica state.protocol_state in
+    let events = protocol_events_to_events t pevents in
+    ({alive = true;
+      protocol_state = protocol_state;
+     }, events)
+
+  let recover_client t state = 
+    let (protocol_state, pevents) = P.recover_client state.protocol_state in
+    let events = protocol_events_to_events t pevents in
+    ({alive = true;
+      protocol_state = protocol_state;
+     }, events)
+
+  let gen_replicas n_replicas n_clients = 
+    let protocol_states = P.init_replicas n_replicas n_clients in
+    List.map protocol_states (fun s -> {alive = true; protocol_state = s})
+
+  let gen_clients n_replicas n_clients workload_sizes = 
+    let protocol_states = P.init_clients n_replicas n_clients in
+    let protocol_states_opt = List.map2 protocol_states workload_sizes (fun s w -> P.gen_workload s w) in
+    match protocol_states_opt with
+    | Unequal_lengths -> assert(false)
+    | Ok(protocol_states) -> List.map protocol_states (fun s -> {alive = true; protocol_state = s})
+
+  let initial_replica_events t states = 
+    let (states, pevents_l) = List.unzip (List.map states (fun s -> 
+        let (protocol_state, pevents) = P.start_replica s.protocol_state in
+        ({s with protocol_state = protocol_state;}, pevents)
+      )) in
+    let pevents = List.fold pevents_l ~init:[] ~f:List.append in
+    let events = protocol_events_to_events t pevents in
+    (states, events)
+
+  let initial_client_events t states = 
+    let (states, pevents_l) = List.unzip (List.map states (fun s -> 
+        let (protocol_state, pevents) = P.start_client s.protocol_state in
+        ({s with protocol_state = protocol_state;}, pevents)
+      )) in
+    let pevents = List.fold pevents_l ~init:[] ~f:List.append in
+    let events = protocol_events_to_events t pevents in
+    (states, events)
+
+  let initial_sim_events = []
+
+  let simulate states eventlist i comp = 
+    let state_opt = List.nth states i in
+    match state_opt with
+    | None -> assert(false)
+    | Some(state) ->
+      let (state, events) = comp state in
+      let states = List.mapi states (fun j s -> if j = i then state else s) in
+      let eventlist = EL.add_multi eventlist events in
+      (states, eventlist)
+
+  let rec sim_loop replicas clients eventlist = 
+    let event_opt = EL.pop eventlist in
+    match event_opt with
+    | None -> ()
+    | Some(e, eventlist) ->
+      let (replicas, clients, eventlist) = 
+        match e with
+        | ReplicaEvent(t, i, comp) -> 
+          let (replicas, eventlist) = simulate replicas eventlist i comp in
+          (replicas, clients, eventlist)
+        | ClientEvent(t, i, comp) -> 
+          let (clients, eventlist) = simulate clients eventlist i comp in
+          (replicas, clients, eventlist) in
+      let protocol_replicas = List.map replicas (fun r -> r.protocol_state) in
+      if P.check_consistency protocol_replicas then
+        sim_loop replicas clients eventlist
+      else
+        ()
+
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

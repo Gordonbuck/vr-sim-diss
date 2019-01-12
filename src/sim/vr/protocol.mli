@@ -17,7 +17,7 @@ module type Protocol_type = sig
   val start_replica: replica_state -> replica_state * protocol_event list
   val recover_replica: replica_state -> replica_state * protocol_event list
   val index_of_replica: replica_state -> int
-
+  val check_consistency: replica_state list -> bool
 
   val on_client_message: client_message -> client_state -> client_state * protocol_event list
   val on_client_timeout: client_timeout -> client_state -> client_state * protocol_event list

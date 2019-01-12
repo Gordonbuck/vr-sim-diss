@@ -12,3 +12,11 @@ Executable "simulation"
   Path: src/sim
   MainIs: simulator.ml
   CompiledObject: best
+  BuildDepends: vr
+
+Library "vr"
+  Path: src/sim/vr
+  Modules: Protocol, StateMachine, Parameters
+  InternalModules: 
+    ReplicaState, ClientState, ProtocolEvents, VR_Utils, Normal, ViewChange, Recovery, StateTransfer, 
+    ClientNormal, ClientRecovery, ReplicaTimeouts, ClientTimeouts

@@ -1,9 +1,11 @@
 S src
 S src/spl
 S src/sim
+S src/sim/vr
 
 B _build/src
 B _build/src/spl
 B _build/src/sim
+B _build/src/sim/vr
 
 PKG core ounit
