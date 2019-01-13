@@ -85,14 +85,18 @@ let commit state commit_until =
   let commit_no = state.commit_no + (List.length to_commit) in
   (commit_no, mach, client_table, replies)
 
-let rec compare_logs log1 log2 = 
-  match log1 with
-  | [] -> Some(log2)
-  | r1::log1 ->
-    match log2 with
-    | [] -> Some(r1::log1)
-    | r2::log2 ->
-      if r1 = r2 then
-        compare_logs log1 log2
-      else
-        None
+let commited_requests cn log = List.rev (List.drop log (List.length log - 1 - cn))
+
+let compare_logs log1 log2 = 
+  let rec compare_logs rlog1 rlog2 = 
+    match rlog1 with
+    | [] -> Some(log2)
+    | r1::rlog1 ->
+      match rlog2 with
+      | [] -> Some(log1)
+      | r2::rlog2 ->
+        if r1 = r2 then
+          compare_logs rlog1 rlog2
+        else
+          None in
+  compare_logs log1 log2
