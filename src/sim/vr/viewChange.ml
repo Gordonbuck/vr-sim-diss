@@ -1,7 +1,7 @@
 open Core
 open ClientState
 open ReplicaState
-open ProtocolEvents
+open VR_Events
 open VR_Utils
 
 let notice_viewchange state = 

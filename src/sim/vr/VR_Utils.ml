@@ -1,7 +1,7 @@
 open Core
 open ClientState
 open ReplicaState
-open ProtocolEvents
+open VR_Events
 
 let is_primary state = 
   state.view_no mod (List.length state.configuration) = state.replica_no

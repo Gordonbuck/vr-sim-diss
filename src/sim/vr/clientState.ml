@@ -1,4 +1,4 @@
-open ProtocolEvents
+open VR_Events
 
 type client_state = {
   (* protocol state *)

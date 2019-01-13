@@ -8,15 +8,15 @@ BuildTools: ocamlbuild
 Plugins: META (0.4), DevFiles (0.4)
 BuildDepends: core, threads
 
-Executable "simulation"
+Executable "main"
   Path: src/sim
-  MainIs: simulator.ml
+  MainIs: main.ml
   CompiledObject: best
   BuildDepends: vr
 
 Library "vr"
   Path: src/sim/vr
-  Modules: Protocol, StateMachine, Parameters
+  Modules: Protocol, Parameters, StateMachine
   InternalModules: 
-    ReplicaState, ClientState, ProtocolEvents, VR_Utils, Normal, ViewChange, Recovery, StateTransfer, 
+    ReplicaState, ClientState, VR_Events, VR_Utils, Normal, ViewChange, Recovery, StateTransfer, 
     ClientNormal, ClientRecovery, ReplicaTimeouts, ClientTimeouts

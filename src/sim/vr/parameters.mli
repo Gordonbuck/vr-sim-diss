@@ -17,4 +17,5 @@ module type Parameters_type = sig
   val termination: termination_type
 end
 
-module VR_test_params : Parameters_type
+module VR_test_params : Parameters_type with type replica_timeout = VR_Events.replica_timeout 
+  with type client_timeout = VR_Events.client_timeout

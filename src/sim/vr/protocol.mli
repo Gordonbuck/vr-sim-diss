@@ -27,6 +27,8 @@ module type Protocol_type = sig
   val recover_client: client_state -> client_state * protocol_event list
   val index_of_client: client_state -> int
   val gen_workload: client_state -> int -> client_state
+  val finished_workloads: client_state list -> bool
 end
 
-module VR : Protocol_type
+module VR : Protocol_type with type replica_timeout = VR_Events.replica_timeout 
+  with type client_timeout = VR_Events.client_timeout

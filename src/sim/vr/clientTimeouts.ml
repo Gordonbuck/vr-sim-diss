@@ -1,7 +1,7 @@
 open Core
 open ClientState
 open ReplicaState
-open ProtocolEvents
+open VR_Events
 open VR_Utils
 
 let on_request_timeout (state : client_state) v = 

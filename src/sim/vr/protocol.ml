@@ -29,13 +29,14 @@ module type Protocol_type = sig
   val recover_client: client_state -> client_state * protocol_event list
   val index_of_client: client_state -> int
   val gen_workload: client_state -> int -> client_state
+  val finished_workloads: client_state list -> bool
 end
 
 module VR = struct
 
   include ClientState
   include ReplicaState
-  include ProtocolEvents
+  include VR_Events
   include VR_Utils
   include Normal
   include ViewChange
@@ -225,5 +226,14 @@ module VR = struct
         | None -> false
         | Some(log) -> inner replicas log in
     inner replicas []
+
+  let finished_workloads clients = 
+    let rec inner clients = 
+      match clients with
+      | [] -> true
+      | (c::clients) -> 
+        if (c.next_op_index < (List.length c.operations_to_do) + 1) then false
+        else inner clients in
+    inner clients
 
 end

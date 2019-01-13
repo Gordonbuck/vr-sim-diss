@@ -21,16 +21,16 @@ module type Parameters_type = sig
 
 end
 
-module VR_test_params : Parameters_type = struct
+module VR_test_params = struct
 
-  include ProtocolEvents
+  include VR_Events
   type termination_type = Timelimit of int | WorkCompletion
 
   let n_replicas = 10
 
   let n_clients = 3
 
-  let n_iterations = 10
+  let n_iterations = 1
 
   let workloads = [10; 15; 20]
 

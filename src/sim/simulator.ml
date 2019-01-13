@@ -3,10 +3,10 @@ open Protocol
 open Parameters
 open EventList
 
-module Create (P : Protocol_type) 
+module Make (P : Protocol_type) 
     (Params : Parameters_type 
-     with type replica_timeout := P.replica_timeout 
-     with type client_timeout := P.client_timeout) = struct
+     with type replica_timeout = P.replica_timeout 
+     with type client_timeout = P.client_timeout) = struct
 
   module T = SimTime
   module EL = EventHeap
@@ -27,6 +27,8 @@ module Create (P : Protocol_type)
     | ClientEvent(t, _, _) -> t
 
   let compare_events e1 e2 = T.compare (time_of_event e1) (time_of_event e2)
+
+      (* protocol events *)
 
   let rec build_replica_msg_event t i msg = 
     let t = T.inc t (T.span_of_int (Params.packet_delay ())) in
@@ -94,6 +96,8 @@ module Create (P : Protocol_type)
         protocol_state = protocol_state;
        }, events)
 
+        (* crash events *)
+
   let crash_replica state = 
     let protocol_state = P.crash_replica state.protocol_state in
     {alive = false; protocol_state = protocol_state;}
@@ -115,6 +119,8 @@ module Create (P : Protocol_type)
     ({alive = true;
       protocol_state = protocol_state;
      }, events)
+
+      (* initalization *)
 
   let gen_replicas n_replicas n_clients = 
     let protocol_states = P.init_replicas n_replicas n_clients in
@@ -147,6 +153,18 @@ module Create (P : Protocol_type)
 
   let initial_sim_events = []
 
+      (* termination *)
+
+  let should_terminate replicas clients e = 
+    match Params.termination with
+    | Timelimit(t_int) -> 
+      T.compare (time_of_event e) (T.t_of_int t_int) >= 0
+    | WorkCompletion -> 
+      let protocol_clients = List.map clients (fun c -> c.protocol_state) in
+      P.finished_workloads protocol_clients
+
+      (* simulation *)
+
   let simulate states eventlist i comp = 
     let state_opt = List.nth states i in
     match state_opt with
@@ -157,39 +175,42 @@ module Create (P : Protocol_type)
       let eventlist = EL.add_multi eventlist events in
       (states, eventlist)
 
-  let rec sim_loop replicas clients eventlist = 
+  let rec sim_loop j replicas clients eventlist = 
     let event_opt = EL.pop eventlist in
     match event_opt with
-    | None -> ()
+    | None -> Printf.printf "No more events to simulate, terminating\n"
     | Some(e, eventlist) ->
-      let (replicas, clients, eventlist) = 
-        match e with
-        | ReplicaEvent(t, i, comp) -> 
-          let (replicas, eventlist) = simulate replicas eventlist i comp in
-          (replicas, clients, eventlist)
-        | ClientEvent(t, i, comp) -> 
-          let (clients, eventlist) = simulate clients eventlist i comp in
-          (replicas, clients, eventlist) in
-      let protocol_replicas = List.map replicas (fun r -> r.protocol_state) in
-      if P.check_consistency protocol_replicas then
-        sim_loop replicas clients eventlist
+      if should_terminate replicas clients e then
+        Printf.printf "Work completed, terminating\n"
       else
-        ()
+        let (replicas, clients, eventlist) = 
+          match e with
+          | ReplicaEvent(t, i, comp) -> 
+            let (replicas, eventlist) = simulate replicas eventlist i comp in
+            (replicas, clients, eventlist)
+          | ClientEvent(t, i, comp) -> 
+            let (clients, eventlist) = simulate clients eventlist i comp in
+            (replicas, clients, eventlist) in
+        let protocol_replicas = List.map replicas (fun r -> r.protocol_state) in
+        Printf.printf "Simulating event number %n\n" j;
+        if P.check_consistency protocol_replicas then
+          sim_loop (j+1) replicas clients eventlist
+        else
+          Printf.printf "Consistency check failed, terminating\n";
+          ()
+
+  let run () = 
+    let rec inner i = 
+      if i > Params.n_iterations then ()
+      else
+        let replicas = gen_replicas Params.n_replicas Params.n_clients in
+        let clients = gen_clients Params.n_replicas Params.n_clients Params.workloads in
+        let (replicas, replica_events) = initial_replica_events (T.t_of_int 0) replicas in
+        let (clients, client_events) = initial_client_events (T.t_of_int 0) clients in
+        let eventlist = EL.add_multi (EL.add_multi (EL.create compare_events) replica_events) client_events in
+        Printf.printf "Simulation number %n\n" i;
+        sim_loop 1 replicas clients eventlist; 
+        inner (i + 1) in
+    inner (1)
 
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
