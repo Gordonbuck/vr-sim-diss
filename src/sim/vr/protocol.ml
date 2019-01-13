@@ -228,7 +228,7 @@ module VR = struct
       | (r::replicas) ->
         let log2 = commited_requests r.op_no r.log in
         let larger_log_opt = compare_logs log1 log2 in
-        Printf.printf "replica_no %i, op_no %i, commit_no %i, log: " r.replica_no r.op_no r.commit_no;
+        Printf.printf "replica_no %i, view_no %i, op_no %i, commit_no %i, log: " r.replica_no r.view_no r.op_no r.commit_no;
         print_log r.log;
         match larger_log_opt with
         | None -> false
