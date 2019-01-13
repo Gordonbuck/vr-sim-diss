@@ -34,9 +34,13 @@ module VR_test_params = struct
 
   let workloads = [10; 15; 20]
 
-  let drop_packet () = false
+  let drop_packet () = 
+    let i = Random.int 100 in
+    if i < 20 then true else false
 
-  let duplicate_packet () = false
+  let duplicate_packet () = 
+    let i = Random.int 100 in
+    if i < 20 then true else false
 
   let packet_delay () = 10
 
@@ -53,7 +57,7 @@ module VR_test_params = struct
 
   let time_for_client_timeout timeout = 
     match timeout with
-    | RequestTimeout(_) -> 30
+    | RequestTimeout(_) -> 40
     | ClientRecoveryTimeout(_) -> 30
 
   let fail_replica i = None

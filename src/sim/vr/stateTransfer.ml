@@ -33,6 +33,7 @@ let on_newstate state v l n k =
   if n <= state.op_no || state.status <> Normal || state.view_no <> v then
     (state, [])
   else
+    let l = List.take l (n - state.op_no) in
     let log = List.append l state.log in
     let (commit_no, mach, client_table, replies) = commit state ((List.length state.log) - 1 - k) in
     let no_primary_comms = state.no_primary_comms + 1 in

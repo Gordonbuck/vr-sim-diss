@@ -17,7 +17,8 @@ let on_heartbeat_timeout state v n =
 let on_prepare_timeout state v k = 
   if state.valid_timeout = v && state.commit_no < k then
     (* havent committed the operation yet *)
-    let req_opt = List.nth state.log k in
+    let index = List.length state.log - 1 - k in
+    let req_opt = List.nth state.log index in
     match req_opt with
     | None -> (* no such request in log, should have been caught by valid timer tag *) assert(false)
     | Some(req) ->

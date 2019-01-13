@@ -47,6 +47,14 @@ module VR = struct
   include ReplicaTimeouts
   include ClientTimeouts
 
+  let print_log log = 
+    let rec inner log = 
+      match log with
+      | [] -> ()
+      | (_, c, s)::[] -> Printf.printf "(%i, %i)" c s
+      | (_, c, s)::log -> Printf.printf "(%i, %i) " c s; inner log in
+    Printf.printf "["; inner log; Printf.printf "]\n"
+
   let on_replica_message msg state = 
     match msg with
     | Request(op, c, s) -> on_request state op c s
@@ -213,22 +221,14 @@ module VR = struct
 
   let index_of_client state = state.client_id
 
-  let print_log log = 
-    let rec inner log = 
-      match log with
-      | [] -> ()
-      | (_, c, s)::[] -> Printf.printf "(%i, %i)" c s
-      | (_, c, s)::log -> Printf.printf "(%i, %i) " c s; inner log in
-    Printf.printf "["; inner log; Printf.printf "]\n"
-
   let check_consistency replicas = 
     let rec inner replicas log1 = 
       match replicas with
       | [] -> true
       | (r::replicas) ->
-        let log2 = commited_requests r.commit_no r.log in
+        let log2 = commited_requests r.op_no r.log in
         let larger_log_opt = compare_logs log1 log2 in
-        Printf.printf "Replica %i, commit_no %i, log: " r.replica_no r.commit_no;
+        Printf.printf "replica_no %i, op_no %i, commit_no %i, log: " r.replica_no r.op_no r.commit_no;
         print_log r.log;
         match larger_log_opt with
         | None -> false
