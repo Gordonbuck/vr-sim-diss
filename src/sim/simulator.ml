@@ -30,12 +30,28 @@ module Make (P : Protocol_type)
 
       (* protocol events *)
 
-  let rec build_replica_msg_event t i msg = 
-    let t = T.inc t (T.span_of_int (Params.packet_delay ())) in
-    ReplicaEvent(t, i, replica_protocol_event t (P.on_replica_message msg))
-  and build_client_msg_event t i msg = 
-    let t = T.inc t (T.span_of_int (Params.packet_delay ())) in
-    ClientEvent(t, i, client_protocol_event t (P.on_client_message msg))
+  let rec build_replica_msg_events t i msg = 
+    if Params.drop_packet () then
+      []
+    else
+      let t1 = T.inc t (T.span_of_int (Params.packet_delay ())) in
+      let events = [ReplicaEvent(t1, i, replica_protocol_event t1 (P.on_replica_message msg))] in
+      if Params.duplicate_packet () then
+        let t2 = T.inc t (T.span_of_int (Params.packet_delay ())) in
+        ReplicaEvent(t2, i, replica_protocol_event t2 (P.on_replica_message msg))::events
+      else
+        events
+  and build_client_msg_events t i msg = 
+    if Params.drop_packet () then
+      []
+    else
+      let t1 = T.inc t (T.span_of_int (Params.packet_delay ())) in
+      let events = [ClientEvent(t1, i, client_protocol_event t1 (P.on_client_message msg))] in
+      if Params.duplicate_packet () then
+        let t2 = T.inc t (T.span_of_int (Params.packet_delay ())) in
+        ClientEvent(t2, i, client_protocol_event t2 (P.on_client_message msg))::events
+      else
+        events
   and build_replica_timeout_event t i timeout =  
     let t = T.inc t (T.span_of_int (Params.time_for_replica_timeout timeout)) in
     ReplicaEvent(t, i, replica_protocol_event t (P.on_replica_timeout timeout))
@@ -48,24 +64,27 @@ module Make (P : Protocol_type)
     | P.ReplicaTimeout(timeout, i) -> build_replica_timeout_event t i timeout
     | P.ClientTimeout(timeout, i) -> build_client_timeout_event t i timeout
 
-  and msg_to_event t i msg = 
+  and msg_to_events t i msg = 
     match msg with
-    | P.ReplicaMessage(msg) -> build_replica_msg_event t i msg
-    | P.ClientMessage(msg) -> build_client_msg_event t i msg
+    | P.ReplicaMessage(msg) -> build_replica_msg_events t i msg
+    | P.ClientMessage(msg) -> build_client_msg_events t i msg
 
   and broadcast_msg_to_events t msg = 
     match msg with
-    | P.ReplicaMessage(msg) -> List.init (Params.n_replicas) (fun i -> build_replica_msg_event t i msg)
-    | P.ClientMessage(msg) -> List.init (Params.n_clients) (fun i -> build_client_msg_event t i msg)
+    | P.ReplicaMessage(msg) -> 
+      List.fold (List.init (Params.n_replicas) (fun i -> build_replica_msg_events t i msg)) ~init:[] ~f:(List.append)
+    | P.ClientMessage(msg) -> 
+      List.fold (List.init (Params.n_clients) (fun i -> build_client_msg_events t i msg)) ~init:[] ~f:(List.append)
 
   and comm_to_events t comm = 
     match comm with
-    | P.Unicast(msg, i) -> [msg_to_event t i msg]
+    | P.Unicast(msg, i) -> msg_to_events t i msg
     | P.Broadcast(msg) -> broadcast_msg_to_events t msg
-    | P.Multicast(msg, indices) -> List.map indices (fun i -> msg_to_event t i msg)
+    | P.Multicast(msg, indices) -> 
+      List.fold (List.map indices (fun i -> msg_to_events t i msg)) ~init:[] ~f:(List.append)
 
   and protocol_events_to_events t pevents = 
-    let rec pete l acc =
+    let rec inner l acc =
       match l with
       | [] -> acc
       | e::l ->
@@ -73,8 +92,8 @@ module Make (P : Protocol_type)
           match e with
           | P.Communication(comm) -> comm_to_events t comm
           | P.Timeout(timeout) -> [timeout_to_event t timeout] in
-        pete l (new_events@acc) in
-    pete pevents []
+        inner l (new_events@acc) in
+    inner pevents []
 
   and replica_protocol_event t comp state = 
     if not state.alive then
