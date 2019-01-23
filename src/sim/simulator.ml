@@ -34,10 +34,10 @@ module Make (P : Protocol_type)
     if Params.drop_packet () then
       []
     else
-      let t1 = T.inc t (T.span_of_int (Params.packet_delay ())) in
+      let t1 = T.inc t (T.span_of_float (Params.packet_delay ())) in
       let events = [ReplicaEvent(t1, i, replica_protocol_event t1 (P.on_replica_message msg))] in
       if Params.duplicate_packet () then
-        let t2 = T.inc t (T.span_of_int (Params.packet_delay ())) in
+        let t2 = T.inc t (T.span_of_float (Params.packet_delay ())) in
         ReplicaEvent(t2, i, replica_protocol_event t2 (P.on_replica_message msg))::events
       else
         events
@@ -45,18 +45,18 @@ module Make (P : Protocol_type)
     if Params.drop_packet () then
       []
     else
-      let t1 = T.inc t (T.span_of_int (Params.packet_delay ())) in
+      let t1 = T.inc t (T.span_of_float (Params.packet_delay ())) in
       let events = [ClientEvent(t1, i, client_protocol_event t1 (P.on_client_message msg))] in
       if Params.duplicate_packet () then
-        let t2 = T.inc t (T.span_of_int (Params.packet_delay ())) in
+        let t2 = T.inc t (T.span_of_float (Params.packet_delay ())) in
         ClientEvent(t2, i, client_protocol_event t2 (P.on_client_message msg))::events
       else
         events
   and build_replica_timeout_event t i timeout =  
-    let t = T.inc t (T.span_of_int (Params.time_for_replica_timeout timeout)) in
+    let t = T.inc t (T.span_of_float (Params.time_for_replica_timeout timeout)) in
     ReplicaEvent(t, i, replica_protocol_event t (P.on_replica_timeout timeout))
   and build_client_timeout_event t i timeout = 
-    let t = T.inc t (T.span_of_int (Params.time_for_client_timeout timeout)) in
+    let t = T.inc t (T.span_of_float (Params.time_for_client_timeout timeout)) in
     ClientEvent(t, i, client_protocol_event t (P.on_client_timeout timeout))
 
   and timeout_to_event t timeout = 
@@ -170,14 +170,12 @@ module Make (P : Protocol_type)
     let events = protocol_events_to_events t pevents in
     (states, events)
 
-  let initial_sim_events = []
-
       (* termination *)
 
   let should_terminate replicas clients e = 
     match Params.termination with
-    | Timelimit(t_int) -> 
-      T.compare (time_of_event e) (T.t_of_int t_int) >= 0
+    | Timelimit(t_float) -> 
+      T.compare (time_of_event e) (T.t_of_float t_float) >= 0
     | WorkCompletion -> 
       let protocol_clients = List.map clients (fun c -> c.protocol_state) in
       P.finished_workloads protocol_clients
@@ -224,8 +222,8 @@ module Make (P : Protocol_type)
       else
         let replicas = gen_replicas Params.n_replicas Params.n_clients in
         let clients = gen_clients Params.n_replicas Params.n_clients Params.workloads in
-        let (replicas, replica_events) = initial_replica_events (T.t_of_int 0) replicas in
-        let (clients, client_events) = initial_client_events (T.t_of_int 0) clients in
+        let (replicas, replica_events) = initial_replica_events (T.t_of_float 0.) replicas in
+        let (clients, client_events) = initial_client_events (T.t_of_float 0.) clients in
         let eventlist = EL.add_multi (EL.add_multi (EL.create compare_events) replica_events) client_events in
         Printf.printf "Simulation number %n\n" i;
         sim_loop 1 replicas clients eventlist; 
