@@ -104,7 +104,7 @@ let on_doviewchange state v l v' n k i =
          }, [])
 
 let on_startview state v l n k = 
-  if state.status = Recovering || v < state.view_no then
+  if state.status = Recovering || v < state.view_no || (v = state.view_no && state.status <> ViewChange) then
     (state, [])
   else
     let view_no = v in

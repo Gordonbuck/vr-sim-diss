@@ -1,10 +1,12 @@
 open Core
+open ParameterDistributions
 
 module type Parameters_type = sig 
 
   type replica_timeout
   type client_timeout
   type termination_type = Timelimit of float | WorkCompletion
+  type trace_level_type = High | Medium | Low
 
   val n_replicas: int
   val n_clients: int
@@ -18,58 +20,15 @@ module type Parameters_type = sig
   val fail_replica: unit -> float option
   val fail_client: unit -> float option
   val termination: termination_type
+  val trace_level: trace_level_type
 
 end
-
-module GilbertElliottModel = struct 
-
-  type state = Good | Bad
-
-  type t = {p: float; q : float; state: state}    
-
-  let init p q = assert(p +. q = 1.); {p = p; q = q; state = Good}
-
-  let tick model = 
-    let r = Random.float 1. in
-    match model.state with
-    | Good -> 
-      if r < model.p then (model.state, model)
-      else 
-        let model = {model with state = Bad;} in
-        (model.state , model)
-    | Bad ->
-      if r < model.q then (model.state, model)
-      else 
-        let model = {model with state = Good;} in
-        (model.state , model)
-
-end
-
-let sample_uniform a b = 
-  let x = Random.float 1. in
-  a +. (x *. (b -. a))
-
-let sample_stdnormal_boxmuller () = 
-  let u1 = Random.float 1. in
-  let u2 = Random.float 1. in
-  let z0 = (sqrt ((-. 2.) *. (log u1))) *. (Float.cos (2. *. Float.pi *. u2)) in
-  let _ = (sqrt ((-. 2.) *. (log u1))) *. (Float.sin (2. *. Float.pi *. u2)) in
-  z0
-
-let sample_normal_boxmuller mu stdv = 
-  let x = sample_stdnormal_boxmuller () in
-  stdv *. x +. mu
-
-let sample_truncatednormal_boxmuller mu stdv lower = 
-  let rec repeat () = 
-    let x = sample_normal_boxmuller mu stdv in
-    if x >= lower then x else repeat () in
-  repeat ()
 
 module VR_test_params = struct
 
   include VR_Events
   type termination_type = Timelimit of float | WorkCompletion
+  type trace_level_type = High | Medium | Low
 
   let n_replicas = 10
 
@@ -114,5 +73,7 @@ module VR_test_params = struct
     if i < 20 then Some(sample_truncatednormal_boxmuller 50. 400. 50.) else None
 
   let termination = WorkCompletion
+
+  let trace_level = High
 
 end

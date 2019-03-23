@@ -49,18 +49,18 @@ module VR = struct
 
   let on_replica_message msg state = 
     match msg with
-    | Request(op, c, s) -> on_request state op c s
-    | Prepare(v, (op, c, s), n, k) -> on_prepare state v (op, c, s) n k
-    | PrepareOk(v, n, i) -> on_prepareok state v n i
-    | Commit(v, k) -> on_commit state v k
-    | StartViewChange(v, i) -> on_startviewchange state v i
-    | DoViewChange(v, l, v', n, k, i) -> on_doviewchange state v l v' n k i
-    | StartView(v, l, n, k) -> on_startview state v l n k
-    | Recovery(i, x) -> on_recovery state i x
-    | RecoveryResponse(v, x, opt_p, j) -> on_recoveryresponse state v x opt_p j
-    | GetState(v, n', i) -> on_getstate state v n' i
-    | NewState(v, l, n, k) -> on_newstate state v l n k
-    | ClientRecovery(c) -> on_clientrecovery state c
+    | Request(op, c, s) -> Printf.printf "request"; on_request state op c s
+    | Prepare(v, (op, c, s), n, k) -> Printf.printf "prepare"; on_prepare state v (op, c, s) n k
+    | PrepareOk(v, n, i) -> Printf.printf "prepareok"; on_prepareok state v n i
+    | Commit(v, k) -> Printf.printf "commit"; on_commit state v k
+    | StartViewChange(v, i) -> Printf.printf "startviewchange"; on_startviewchange state v i
+    | DoViewChange(v, l, v', n, k, i) -> Printf.printf "doviewchange"; on_doviewchange state v l v' n k i
+    | StartView(v, l, n, k) -> Printf.printf "startview"; on_startview state v l n k
+    | Recovery(i, x) -> Printf.printf "recovery"; on_recovery state i x
+    | RecoveryResponse(v, x, opt_p, j) -> Printf.printf "recoveryresponse"; on_recoveryresponse state v x opt_p j
+    | GetState(v, n', i) -> Printf.printf "getstate"; on_getstate state v n' i
+    | NewState(v, l, n, k) -> Printf.printf "new state"; on_newstate state v l n k
+    | ClientRecovery(c) -> Printf.printf "ClientRecovery"; on_clientrecovery state c
 
   let on_client_message msg state = 
     match msg with

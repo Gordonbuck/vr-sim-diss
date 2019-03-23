@@ -11,8 +11,6 @@ module Make (P : Protocol_type)
   module T = SimTime
   module EL = EventHeap
 
-  type sim_event = Crash | Recover
-
   type 'protocol_state state = { alive : bool; protocol_state: 'protocol_state }
   type replica_state =  P.replica_state state
   type client_state = P.client_state state
@@ -192,13 +190,13 @@ module Make (P : Protocol_type)
       let eventlist = EL.add_multi eventlist events in
       (states, eventlist)
 
-  let rec sim_loop j replicas clients eventlist = 
+  let rec sim_loop replicas clients eventlist trace = 
     let event_opt = EL.pop eventlist in
     match event_opt with
-    | None -> Printf.printf "No more events to simulate, terminating\n"
+    | None -> ("No more events to simulate, terminating")::trace
     | Some(e, eventlist) ->
       if should_terminate replicas clients e then
-        Printf.printf "Work completed, terminating\n"
+        ("Work completed, terminating")::trace
       else
         let (replicas, clients, eventlist) = 
           match e with
@@ -209,12 +207,10 @@ module Make (P : Protocol_type)
             let (clients, eventlist) = simulate clients eventlist i comp in
             (replicas, clients, eventlist) in
         let protocol_replicas = List.map replicas (fun r -> r.protocol_state) in
-        Printf.printf "Simulating event number %n\n" j;
         if P.check_consistency protocol_replicas then
-          sim_loop (j+1) replicas clients eventlist
+          sim_loop replicas clients eventlist trace
         else
-          Printf.printf "Consistency check failed, terminating\n";
-          ()
+          ("Consistency check failed, terminating")::trace
 
   let run () = 
     let rec inner i = 
@@ -225,8 +221,8 @@ module Make (P : Protocol_type)
         let (replicas, replica_events) = initial_replica_events (T.t_of_float 0.) replicas in
         let (clients, client_events) = initial_client_events (T.t_of_float 0.) clients in
         let eventlist = EL.add_multi (EL.add_multi (EL.create compare_events) replica_events) client_events in
-        Printf.printf "Simulation number %n\n" i;
-        sim_loop 1 replicas clients eventlist; 
+        let trace = sim_loop replicas clients eventlist [] in
+        Printf.printf "Simulation number %n\n" i; 
         inner (i + 1) in
     inner (1)
 
