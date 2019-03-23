@@ -1,0 +1,3 @@
+val begin_recovery : VR_State.replica_state -> (VR_State.replica_state * VR_State.protocol_event list)
+val on_recovery : VR_State.replica_state -> VR_State.index -> VR_State.index -> (VR_State.replica_state * VR_State.protocol_event list)
+val on_recoveryresponse : VR_State.replica_state -> VR_State.index -> VR_State.index -> ((VR_State.StateMachine.operation * VR_State.index * VR_State.index) list * VR_State.index * VR_State.index) option -> VR_State.index -> (VR_State.replica_state * VR_State.protocol_event list)

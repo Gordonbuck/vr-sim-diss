@@ -59,7 +59,7 @@ let on_doviewchange state v l v' n k i =
     (* recovered, re-send startview message *)
     (state, [Communication(Unicast(ReplicaMessage(StartView(state.view_no, state.log, state.op_no, state.commit_no)), i))])
   else
-    let received_doviewchange = received_doviewchange state.doviewchanges i in
+    let received_doviewchange = received_doviewchange state i in
     if received_doviewchange then
       (* already received a doviewchange message from this replica *)
       (state, [])
