@@ -21,4 +21,8 @@ module ClientState (StateMachine : StateMachine.StateMachine_type) : sig
     | RequestTimeout of int
     | ClientRecoveryTimeout of int
 
+  val init_clients: int -> int -> client_state list
+  val crash_client: client_state -> client_state
+  val index_of_client: client_state -> int
+
 end

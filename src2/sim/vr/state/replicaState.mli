@@ -55,4 +55,8 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) : sig
     | RecoveryTimeout of int
     | GetStateTimeout of int * int
 
+  val init_replicas: int -> int -> replica_state list
+  val crash_replica: replica_state -> replica_state
+  val index_of_replica: replica_state -> int
+
 end

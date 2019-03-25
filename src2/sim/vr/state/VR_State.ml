@@ -8,9 +8,16 @@ open ClientState.ClientState(StateMachine)
 type index = int
 
 type message = ReplicaMessage of replica_message | ClientMessage of client_message
-type communication = Unicast of message * int |  Broadcast of message | Multicast of message * int list
-type timeout = ReplicaTimeout of replica_timeout * int | ClientTimeout of client_timeout * int
+type communication = Unicast of message * index |  Broadcast of message | Multicast of message * index list
+type timeout = ReplicaTimeout of replica_timeout * index | ClientTimeout of client_timeout * index
 type protocol_event = Communication of communication | Timeout of timeout
+
+let index_of_int i = if i < -1 then assert(false) else i
+let int_of_index i = i
+
+let gen_workload state n = {state with operations_to_do = StateMachine.gen_ops n; }
+
+let finished_workload state = not (state.next_op_index < (List.length state.operations_to_do) + 1)
 
 let received_clientrecoveryresponse state i = 
   let received_clientrecoveryresponse_opt = List.nth state.received_clientrecoveryresponses i in
@@ -59,6 +66,14 @@ let next_operation state =
     valid_timeout = valid_timeout;
    }, op_opt)
 
+let previous_operation state = 
+  let op_opt = List.nth state.operations_to_do (state.next_op_index - 1) in
+  match op_opt with
+  | None -> (* no previously sent operation *) assert(false)
+  | Some(op) -> 
+    let valid_timeout = state.valid_timeout + 1 in
+    ({state with valid_timeout = valid_timeout; }, op)
+
 let client_set_view_no state v = {state with view_no = v; }
 
 let client_primary_no state = state.view_no mod (List.length state.configuration)
@@ -75,9 +90,36 @@ let client_quorum state = ((List.length state.configuration) / 2) + 1
 
 let client_no_received_clientrecoveryresponses state = state.no_clientrecoveryresponses
 
+let map_falses l f =
+  let rec map_falses l f i acc = 
+    match l with
+    | [] -> acc
+    | (b::bs) -> if b then map_falses bs f (i+1) acc else map_falses bs f (i+1) ((f i)::acc) in
+  map_falses l f 0 []
 
+let waiting_on_clientrecoveryresponses state = 
+  let indices = map_falses state.received_clientrecoveryresponses (fun i -> i) in
+  indices
 
+let get_request state n = 
+  let index = List.length state.log - 1 - n in
+  let req_opt = List.nth state.log index in
+  match req_opt with
+  | None -> (* no such request in log *) assert(false)
+  | Some(req) -> req
 
+let waiting_on_prepareoks state n =
+  let received_prepareoks = List.map state.casted_prepareoks (fun m -> m >= n) in
+  let indices = map_falses received_prepareoks (fun i -> i) in
+  indices
+
+let waiting_on_startviewchanges state =
+  let indices = map_falses state.received_startviewchanges (fun i -> i) in
+  indices
+
+let waiting_on_recoveryresponses state = 
+  let indices = map_falses state.received_recoveryresponses (fun i -> i) in
+  indices
 
 let is_primary state = state.view_no mod (List.length state.configuration) = state.replica_no
 
@@ -97,7 +139,7 @@ let log state = state.log
 
 let quorum state = ((List.length state.configuration) / 2) + 1
 
-let max_failures state = ((List.length state.configuration) / 2)
+let commited_requests state = List.rev (List.drop state.log (List.length state.log - 1 - state.commit_no))
 
 let increment_view_no state = 
   let view_no = state.view_no + 1 in
@@ -256,7 +298,7 @@ let become_primary state =
   let received_startviewchanges = List.map state.received_startviewchanges (fun _ -> false) in
   let casted_prepareoks = List.map state.casted_prepareoks (fun _ -> state.highest_seen_commit_no) in
   let valid_timeout = state.valid_timeout + 1 in
-  ({state with 
+  {state with 
     queued_prepares = [];
     waiting_prepareoks = waiting_prepareoks;
     casted_prepareoks = casted_prepareoks;
@@ -265,7 +307,7 @@ let become_primary state =
     doviewchanges = [];
     valid_timeout = valid_timeout;
     no_primary_comms = 0;
-   })
+   }
 
 let set_view_no state v = {state with view_no = v; }
 let set_op_no state n = {state with op_no = n; }
@@ -298,7 +340,7 @@ let update_client_table ?(res=None) state c s =
 
 let rec update_client_table_requests state reqs = 
   match reqs with
-  | (op, c, s)::reqs -> update_client_table_requests (update_client_table state c s) reqs
+  | (_, c, s)::reqs -> update_client_table_requests (update_client_table state c s) reqs
   | [] -> state
 
 let log_request state op c s = 
@@ -362,7 +404,7 @@ let commit state k =
     mach = mach;
    }, replies)
 
-let increment_prepareoks state i n =
+let log_prepareok state i n =
   let f = ((List.length state.configuration) / 2) in
   let no_waiting = List.length state.waiting_prepareoks in
   let index = state.commit_no + no_waiting - n in

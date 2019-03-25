@@ -1,3 +1,4 @@
+val start_replica : VR_State.replica_state -> (VR_State.replica_state * VR_State.protocol_event list)
 val on_request : VR_State.replica_state -> VR_State.index -> VR_State.index -> VR_State.index -> (VR_State.replica_state * VR_State.protocol_event list)
 val on_prepare : VR_State.replica_state -> VR_State.index -> (VR_State.index * VR_State.index * VR_State.index) -> VR_State.index -> VR_State.index -> (VR_State.replica_state * VR_State.protocol_event list)
 val on_prepareok : VR_State.replica_state -> VR_State.index -> VR_State.index -> VR_State.index -> (VR_State.replica_state * VR_State.protocol_event list)

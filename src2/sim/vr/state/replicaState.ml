@@ -76,4 +76,78 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) = struct
     | RecoveryTimeout of int
     | GetStateTimeout of int * int
 
+  let init_replicas n_replicas n_clients = 
+    let rec init n_r l =
+      if n_r < 0 then
+        l
+      else
+        let state = {
+          configuration = List.init n_replicas (fun i -> i);
+          replica_no = n_r;
+          view_no = 0;
+          status = Normal;
+          op_no = -1;
+          log = [];
+          commit_no = -1;
+          client_table = List.init n_clients (fun _ -> (-1, None));
+
+          queued_prepares = [];
+          waiting_prepareoks = [];
+          casted_prepareoks = List.init n_replicas (fun _ -> -1);
+          highest_seen_commit_no = -1;
+
+          no_startviewchanges = 0;
+          received_startviewchanges = List.init n_replicas (fun _ -> false);
+          doviewchanges = [];
+          last_normal_view_no = 0;
+
+          recovery_nonce = -1;
+          no_recoveryresponses = 0;
+          received_recoveryresponses = List.init n_replicas (fun _ -> false);
+          primary_recoveryresponse = None;
+
+          valid_timeout = 0;
+          no_primary_comms = 0;
+
+          mach = StateMachine.create ();
+        } in
+        init (n_r - 1) (state::l) in
+    init (n_replicas - 1) []
+
+  let crash_replica state = 
+    let n_replicas = List.length state.configuration in
+    let n_clients = List.length state.client_table in
+    {
+      configuration = state.configuration;
+      replica_no = state.replica_no;
+      view_no = 0;
+      status = Normal;
+      op_no = -1;
+      log = [];
+      commit_no = -1;
+      client_table = List.init n_clients (fun _ -> (-1, None));
+
+      queued_prepares = [];
+      waiting_prepareoks = [];
+      casted_prepareoks = List.init n_replicas (fun _ -> -1);
+      highest_seen_commit_no = -1;
+
+      no_startviewchanges = 0;
+      received_startviewchanges = List.init n_replicas (fun _ -> false);
+      doviewchanges = [];
+      last_normal_view_no = 0;
+
+      recovery_nonce = state.recovery_nonce;
+      no_recoveryresponses = 0;
+      received_recoveryresponses = List.init n_replicas (fun _ -> false);
+      primary_recoveryresponse = None;
+
+      valid_timeout = state.valid_timeout;
+      no_primary_comms = 0;
+
+      mach = StateMachine.create ();
+    }
+
+  let index_of_replica state = state.replica_no
+
 end

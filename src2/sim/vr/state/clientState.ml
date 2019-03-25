@@ -31,4 +31,56 @@ module ClientState (StateMachine : StateMachine.StateMachine_type) = struct
     | RequestTimeout of int
     | ClientRecoveryTimeout of int
 
+  let init_clients n_replicas n_clients = 
+    let rec init n_c l = 
+      if n_c < 0 then
+        l
+      else
+        let state = {
+          configuration = List.init n_replicas (fun i -> i);
+          view_no = 0;
+          client_id = n_c;
+          request_no = -1;
+
+          next_op_index = 0;
+          operations_to_do = [];
+
+          recovering = false;
+          no_clientrecoveryresponses = 0;
+          received_clientrecoveryresponses = List.init n_replicas (fun _ -> false);
+
+          valid_timeout = 0;
+        } in
+        init (n_c - 1) (state::l) in
+    init (n_clients - 1) []
+
+  let crash_client (state : client_state) =
+    let n_replicas = List.length state.configuration in
+    {
+      configuration = state.configuration;
+      view_no = 0;
+      client_id = state.client_id;
+      request_no = -1;
+
+      next_op_index = state.next_op_index;
+      operations_to_do = state.operations_to_do;
+
+      recovering = false;
+      no_clientrecoveryresponses = 0;
+      received_clientrecoveryresponses = List.init n_replicas (fun _ -> false);
+
+      valid_timeout = state.valid_timeout;
+    }
+
+  let finished_workloads clients = 
+    let rec inner clients = 
+      match clients with
+      | [] -> true
+      | (c::clients) -> 
+        if (c.next_op_index < (List.length c.operations_to_do) + 1) then false
+        else inner clients in
+    inner clients
+
+  let index_of_client state = state.client_id
+
 end

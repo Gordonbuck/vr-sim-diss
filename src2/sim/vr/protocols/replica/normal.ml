@@ -2,6 +2,12 @@ open Core
 open VR_State
 open StateTransfer
 
+let start_replica state = 
+  if is_primary state then
+    (state, [Timeout(ReplicaTimeout(HeartbeatTimeout(valid_timeout state, op_no state), replica_no state))])
+  else
+    (state, [Timeout(ReplicaTimeout(PrimaryTimeout(valid_timeout state, no_primary_comms state), replica_no state))])
+
 let on_request state op c s =
   if (is_primary state && (status state) = Normal) then
     let (cte_s, res_opt) = get_client_table_entry state c in
@@ -43,7 +49,7 @@ let on_prepare state v (op, c, s) n k =
           [Communication(Unicast(ReplicaMessage(PrepareOk(view_no state, op_no, replica_no state)), primary_no))]
         else 
           [Timeout(ReplicaTimeout(StateTransferTimeout(valid_timeout state, op_no state), replica_no state))] in
-      let (state, replies) = commit state k in
+      let (state, _) = commit state k in
       (state, Timeout(primary_timeout)::events)
 
 let on_prepareok state v n i = 
@@ -57,7 +63,7 @@ let on_prepareok state v n i =
       (* either already received a prepareok from this replica or already committed operation *)
       (state, [])
     else
-      let state = increment_prepareoks state i n in
+      let state = log_prepareok state i n in
       let (state, k) = process_waiting_prepareoks state in
       let (state, replies) = commit state k in
       let comms = List.map replies (fun c -> Communication(c)) in

@@ -17,7 +17,7 @@ let on_startviewchange state v i =
       (state, [])
     else
       let state = log_startviewchange state i in
-      let f = max_failures state in
+      let f = (quorum state) - 1 in
       let primary_no = primary_no state in
       let no_startviewchanges = no_received_startviewchanges state in
       let events = 
