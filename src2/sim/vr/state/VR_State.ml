@@ -8,8 +8,8 @@ open ClientState.ClientState(StateMachine)
 type index = int
 
 type message = ReplicaMessage of replica_message | ClientMessage of client_message
-type communication = Unicast of message * index |  Broadcast of message | Multicast of message * index list
-type timeout = ReplicaTimeout of replica_timeout * index | ClientTimeout of client_timeout * index
+type communication = Unicast of message * int |  Broadcast of message | Multicast of message * int list
+type timeout = ReplicaTimeout of replica_timeout * int | ClientTimeout of client_timeout * int
 type protocol_event = Communication of communication | Timeout of timeout
 
 let index_of_int i = if i < -1 then assert(false) else i
@@ -389,7 +389,7 @@ let commit state k =
       let mach = StateMachine.apply_op mach op in
       let res = StateMachine.last_res mach in
       let ct = update_ct ct c s ~res:(Some(res)) in
-      commit_all mach ct reqs (Unicast(ClientMessage(Reply(state.view_no, s, res)), c)::replies)
+      commit_all mach ct reqs (Unicast(ClientMessage(Reply(state.view_no, s, res)), int_of_index c)::replies)
     | [] -> (mach, ct, replies) in
   let k = max state.highest_seen_commit_no k in
   let commit_until = ((List.length state.log) - 1 - k) in

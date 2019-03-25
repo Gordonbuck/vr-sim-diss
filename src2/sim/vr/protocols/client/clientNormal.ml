@@ -7,8 +7,8 @@ let start_sending state =
   | None -> (* no operations left *) (state, [])
   | Some(op) -> (* send next request *)
     let primary_no = client_primary_no state in
-    (state, [Communication(Unicast(ReplicaMessage(Request(op, client_id state, client_request_no state)), primary_no)); 
-             Timeout(ClientTimeout(RequestTimeout(client_valid_timeout state), client_id state))])
+    (state, [Communication(Unicast(ReplicaMessage(Request(op, client_id state, client_request_no state)), int_of_index primary_no)); 
+             Timeout(ClientTimeout(RequestTimeout(client_valid_timeout state), int_of_index (client_id state)))])
 
 let on_reply state v s res = 
   if s < (client_request_no state) || (client_recovering state) then

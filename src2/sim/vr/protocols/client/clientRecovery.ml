@@ -5,7 +5,7 @@ open ClientNormal
 let begin_clientrecovery state = 
   let state = client_set_recovering state true in
   (state [Communication(Broadcast(ReplicaMessage(ClientRecovery(client_id state)))); 
-          Timeout(ClientTimeout(ClientRecoveryTimeout(client_valid_timeout state), client_id state))])
+          Timeout(ClientTimeout(ClientRecoveryTimeout(client_valid_timeout state), int_of_index (client_id state)))])
 
 let on_clientrecovery state c = 
   if (status state) <> Normal then
@@ -14,7 +14,7 @@ let on_clientrecovery state c =
     let v = view_no state in
     let i = replica_no state in
     let (s, _) = get_client_table_entry state c in
-    (state, [Communication(Unicast(ClientMessage(ClientRecoveryResponse(v, s, i)), c))])
+    (state, [Communication(Unicast(ClientMessage(ClientRecoveryResponse(v, s, i)), int_of_index c))])
 
 let on_clientrecoveryresponse state v s i = 
   if not (client_recovering state) then

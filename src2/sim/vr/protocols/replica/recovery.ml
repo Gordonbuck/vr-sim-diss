@@ -4,7 +4,7 @@ open VR_State
 let begin_recovery state = 
   let state = set_status state Recovery in
   (state, [Communication(Broadcast(ReplicaMessage(Recovery(replica_no state, current_recovery_nonce state)))); 
-           Timeout(ReplicaTimeout(RecoveryTimeout(valid_timeout state), replica_no state))])
+           Timeout(ReplicaTimeout(RecoveryTimeout(valid_timeout state), int_of_index (replica_no state)))])
 
 let on_recovery state i x =
   if (status state) <> Normal then
@@ -16,9 +16,9 @@ let on_recovery state i x =
       let l = log state in
       let n = op_no state in
       let k = commit_no state in
-      (state, [Communication(Unicast(ReplicaMessage(RecoveryResponse(v, x, Some(l, n, k), j)), i))])
+      (state, [Communication(Unicast(ReplicaMessage(RecoveryResponse(v, x, Some(l, n, k), j)), int_of_index i))])
     else
-      (state, [Communication(Unicast(ReplicaMessage(RecoveryResponse(v, x, None, j)), i))])
+      (state, [Communication(Unicast(ReplicaMessage(RecoveryResponse(v, x, None, j)), int_of_index i))])
 
 let on_recoveryresponse state v x opt_p j =
   if (current_recovery_nonce state) <> x || (status state) <> Recovering then
@@ -40,7 +40,7 @@ let on_recoveryresponse state v x opt_p j =
           let state = set_status state Normal in
           let state = become_replica state in
           let (state, _) = commit state k in
-          (state, [Timeout(ReplicaTimeout(PrimaryTimeout(valid_timeout state, no_primary_comms state), replica_no state))])
+          (state, [Timeout(ReplicaTimeout(PrimaryTimeout(valid_timeout state, no_primary_comms state), int_of_index (replica_no state)))])
         | None -> (state, [])
       else
         (state, [])

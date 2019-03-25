@@ -39,8 +39,8 @@ type client_timeout =
   | ClientRecoveryTimeout of int
 
 type message = ReplicaMessage of replica_message | ClientMessage of client_message
-type communication = Unicast of message * index |  Broadcast of message | Multicast of message * index list
-type timeout = ReplicaTimeout of replica_timeout * index | ClientTimeout of client_timeout * index
+type communication = Unicast of message * int |  Broadcast of message | Multicast of message * int list
+type timeout = ReplicaTimeout of replica_timeout * int | ClientTimeout of client_timeout * int
 type protocol_event = Communication of communication | Timeout of timeout
 
 val index_of_int: int -> index
