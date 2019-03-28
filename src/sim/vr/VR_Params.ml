@@ -52,7 +52,7 @@ let n_replicas = 10
 
 let n_clients = 3
 
-let n_iterations = 1
+let n_iterations = 100
 
 let workloads = [10; 15; 20]
 

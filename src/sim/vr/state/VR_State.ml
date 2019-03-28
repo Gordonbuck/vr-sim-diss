@@ -300,7 +300,7 @@ let process_doviewchanges state =
    }, commit_no)
 
 let become_primary state = 
-  let waiting_prepareoks = List.init (state.op_no - state.highest_seen_commit_no) (fun _ -> 0) in
+  let waiting_prepareoks = List.init (max (state.op_no - state.highest_seen_commit_no) 0) (fun _ -> 0) in
   let received_startviewchanges = List.map state.received_startviewchanges (fun _ -> false) in
   let casted_prepareoks = List.map state.casted_prepareoks (fun _ -> state.highest_seen_commit_no) in
   let valid_timeout = state.valid_timeout + 1 in

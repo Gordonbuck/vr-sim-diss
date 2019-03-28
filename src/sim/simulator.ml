@@ -254,10 +254,10 @@ module Simulator (P : Protocol_type)
   let rec sim_loop replicas clients eventlist = 
     let event_opt = EL.pop eventlist in
     match event_opt with
-    | None -> Printf.printf "No more events to simulate, terminating"
+    | None -> Printf.printf "No more events to simulate, terminating\n"
     | Some(e, eventlist) ->
       if should_terminate replicas clients e then
-        Printf.printf "Work completed, terminating"
+        Printf.printf "Work completed, terminating\n"
       else
         let (replicas, clients, eventlist) = 
           match e with
@@ -271,7 +271,7 @@ module Simulator (P : Protocol_type)
         if P.check_consistency protocol_replicas then
           sim_loop replicas clients eventlist
         else
-          Printf.printf "Consistency check failed, terminating"
+          Printf.printf "Consistency check failed, terminating\n"
 
   let run () = 
     let rec inner i = 
