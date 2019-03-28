@@ -16,7 +16,25 @@ Executable "main"
 
 Library "vr"
   Path: src/sim/vr
-  Modules: Protocol, Parameters, StateMachine
-  InternalModules: 
-    ReplicaState, ClientState, VR_Events, VR_Utils, Normal, ViewChange, Recovery, StateTransfer, 
-    ClientNormal, ClientRecovery, ReplicaTimeouts, ClientTimeouts
+  Modules: VR, VR_Params
+  BuildDepends: vr_state, vr_client, vr_replica, vr_timeouts
+
+Library "vr_state"
+  Path: src/sim/vr/state
+  Modules: VR_State, StateMachine
+  InternalModules: ClientState, ReplicaState
+
+Library "vr_client"
+  Path: src/sim/vr/protocols/client
+  Modules: ClientNormal, ClientRecovery
+  BuildDepends: vr_state
+
+Library "vr_replica"
+  Path: src/sim/vr/protocols/replica
+  Modules: Normal, Recovery, StateTransfer, ViewChange
+  BuildDepends: vr_state
+
+Library "vr_timeouts"
+  Path: src/sim/vr/timeouts
+  Modules: ClientTimeouts, ReplicaTimeouts
+  BuildDepends: vr_state, vr_replica

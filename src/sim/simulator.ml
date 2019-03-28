@@ -1,12 +1,73 @@
 open Core
-open Protocol
-open Parameters
 open EventList
 
-module Make (P : Protocol_type) 
+module type Protocol_type = sig
+  
+  type replica_state
+  type client_state
+  type replica_message
+  type client_message
+  type replica_timeout
+  type client_timeout
+  type message = ReplicaMessage of replica_message | ClientMessage of client_message
+  type communication = Unicast of message * int |  Broadcast of message | Multicast of message * int list
+  type timeout = ReplicaTimeout of replica_timeout * int | ClientTimeout of client_timeout * int
+  type protocol_event = Communication of communication | Timeout of timeout
+
+  type trace
+  type trace_level
+
+  val on_replica_message: replica_message -> replica_state -> replica_state * protocol_event list * trace
+  val on_replica_timeout: replica_timeout -> replica_state -> replica_state * protocol_event list * trace
+  val init_replicas: int -> int -> replica_state list
+  val crash_replica: replica_state -> replica_state
+  val start_replica: replica_state -> replica_state * protocol_event list * trace
+  val recover_replica: replica_state -> replica_state * protocol_event list * trace
+  val index_of_replica: replica_state -> int
+  val check_consistency: replica_state list -> bool
+
+  val on_client_message: client_message -> client_state -> client_state * protocol_event list * trace
+  val on_client_timeout: client_timeout -> client_state -> client_state * protocol_event list * trace
+  val init_clients: int -> int -> client_state list
+  val crash_client: client_state -> client_state
+  val start_client: client_state -> client_state * protocol_event list * trace
+  val recover_client: client_state -> client_state * protocol_event list * trace
+  val index_of_client: client_state -> int
+  val gen_workload: client_state -> int -> client_state
+  val finished_workloads: client_state list -> bool
+
+  val string_of_trace: trace -> trace_level -> string
+
+end
+
+module type Parameters_type = sig 
+
+  type replica_timeout
+  type client_timeout
+  type termination_type = Timelimit of float | WorkCompletion
+  type trace_level
+
+  val n_replicas: int
+  val n_clients: int
+  val n_iterations: int
+  val workloads: int list
+  val drop_packet: unit -> bool
+  val duplicate_packet: unit -> bool
+  val packet_delay: unit -> float
+  val time_for_replica_timeout: replica_timeout -> float
+  val time_for_client_timeout: client_timeout -> float
+  val fail_replica: unit -> float option
+  val fail_client: unit -> float option
+  val termination: termination_type
+  val trace_level: trace_level
+
+end
+
+module Simulator (P : Protocol_type) 
     (Params : Parameters_type 
      with type replica_timeout = P.replica_timeout 
-     with type client_timeout = P.client_timeout) = struct
+     with type client_timeout = P.client_timeout
+     with type trace_level = P.trace_level) = struct
 
   module T = SimTime
   module EL = EventHeap
@@ -97,7 +158,7 @@ module Make (P : Protocol_type)
     if not state.alive then
       (state, [])
     else
-      let (protocol_state, pevents) = comp state.protocol_state in
+      let (protocol_state, pevents, _) = comp state.protocol_state in
       let events = protocol_events_to_events t pevents in
       ({state with 
         protocol_state = protocol_state;
@@ -107,7 +168,7 @@ module Make (P : Protocol_type)
     if not state.alive then
       (state, [])
     else
-      let (protocol_state, pevents) = comp state.protocol_state in
+      let (protocol_state, pevents, _) = comp state.protocol_state in
       let events = protocol_events_to_events t pevents in
       ({state with 
         protocol_state = protocol_state;
@@ -124,14 +185,14 @@ module Make (P : Protocol_type)
     {alive = false; protocol_state = protocol_state;}
 
   let recover_replica t state = 
-    let (protocol_state, pevents) = P.recover_replica state.protocol_state in
+    let (protocol_state, pevents, _) = P.recover_replica state.protocol_state in
     let events = protocol_events_to_events t pevents in
     ({alive = true;
       protocol_state = protocol_state;
      }, events)
 
   let recover_client t state = 
-    let (protocol_state, pevents) = P.recover_client state.protocol_state in
+    let (protocol_state, pevents, _) = P.recover_client state.protocol_state in
     let events = protocol_events_to_events t pevents in
     ({alive = true;
       protocol_state = protocol_state;
@@ -152,7 +213,7 @@ module Make (P : Protocol_type)
 
   let initial_replica_events t states = 
     let (states, pevents_l) = List.unzip (List.map states (fun s -> 
-        let (protocol_state, pevents) = P.start_replica s.protocol_state in
+        let (protocol_state, pevents, _) = P.start_replica s.protocol_state in
         ({s with protocol_state = protocol_state;}, pevents)
       )) in
     let pevents = List.fold pevents_l ~init:[] ~f:List.append in
@@ -161,7 +222,7 @@ module Make (P : Protocol_type)
 
   let initial_client_events t states = 
     let (states, pevents_l) = List.unzip (List.map states (fun s -> 
-        let (protocol_state, pevents) = P.start_client s.protocol_state in
+        let (protocol_state, pevents, _) = P.start_client s.protocol_state in
         ({s with protocol_state = protocol_state;}, pevents)
       )) in
     let pevents = List.fold pevents_l ~init:[] ~f:List.append in
@@ -190,13 +251,13 @@ module Make (P : Protocol_type)
       let eventlist = EL.add_multi eventlist events in
       (states, eventlist)
 
-  let rec sim_loop replicas clients eventlist trace = 
+  let rec sim_loop replicas clients eventlist = 
     let event_opt = EL.pop eventlist in
     match event_opt with
-    | None -> ("No more events to simulate, terminating")::trace
+    | None -> Printf.printf "No more events to simulate, terminating"
     | Some(e, eventlist) ->
       if should_terminate replicas clients e then
-        ("Work completed, terminating")::trace
+        Printf.printf "Work completed, terminating"
       else
         let (replicas, clients, eventlist) = 
           match e with
@@ -208,9 +269,9 @@ module Make (P : Protocol_type)
             (replicas, clients, eventlist) in
         let protocol_replicas = List.map replicas (fun r -> r.protocol_state) in
         if P.check_consistency protocol_replicas then
-          sim_loop replicas clients eventlist trace
+          sim_loop replicas clients eventlist
         else
-          ("Consistency check failed, terminating")::trace
+          Printf.printf "Consistency check failed, terminating"
 
   let run () = 
     let rec inner i = 
@@ -221,8 +282,8 @@ module Make (P : Protocol_type)
         let (replicas, replica_events) = initial_replica_events (T.t_of_float 0.) replicas in
         let (clients, client_events) = initial_client_events (T.t_of_float 0.) clients in
         let eventlist = EL.add_multi (EL.add_multi (EL.create compare_events) replica_events) client_events in
-        let trace = sim_loop replicas clients eventlist [] in
         Printf.printf "Simulation number %n\n" i; 
+        sim_loop replicas clients eventlist;
         inner (i + 1) in
     inner (1)
 

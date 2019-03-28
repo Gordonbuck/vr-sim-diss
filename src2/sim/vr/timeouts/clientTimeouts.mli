@@ -1,2 +1,0 @@
-val on_request_timeout : VR_State.client_state -> int -> (VR_State.client_state * VR_State.protocol_event list)
-val on_clientrecovery_timeout : VR_State.client_state -> int -> (VR_State.client_state * VR_State.protocol_event list)

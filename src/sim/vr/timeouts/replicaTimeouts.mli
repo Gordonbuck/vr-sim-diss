@@ -1,0 +1,8 @@
+val on_heartbeat_timeout : VR_State.replica_state -> int -> VR_State.index -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)
+val on_prepare_timeout : VR_State.replica_state -> int -> VR_State.index -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)
+val on_primary_timeout : VR_State.replica_state -> int -> int -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)
+val on_statetransfer_timeout : VR_State.replica_state -> int -> VR_State.index -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)
+val on_startviewchange_timeout : VR_State.replica_state -> int -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)
+val on_doviewchange_timeout : VR_State.replica_state -> int -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)
+val on_recovery_timeout : VR_State.replica_state -> int -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)
+val on_getstate_timeout : VR_State.replica_state -> int -> VR_State.index -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)

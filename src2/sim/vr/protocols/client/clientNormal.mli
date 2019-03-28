@@ -1,2 +1,0 @@
-val start_sending : VR_State.client_state -> (VR_State.client_state * VR_State.protocol_event list)
-val on_reply : VR_State.client_state -> VR_State.index -> VR_State.index -> VR_State.StateMachine.result -> (VR_State.client_state * VR_State.protocol_event list)

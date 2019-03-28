@@ -1,10 +1,7 @@
-open Core
 open Simulator
-open Protocol
-open Parameters
 
 let main () =
-  let module VR_Sim = Make(VR)(VR_test_params) in
+  let module VR_Sim = Simulator(VR)(VR_Params) in
   VR_Sim.run ()
 
 let () = main ()

@@ -1,0 +1,4 @@
+val begin_statetransfer : VR_State.replica_state -> string -> string -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)
+val later_view : VR_State.replica_state -> VR_State.index -> string -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)
+val on_getstate : VR_State.replica_state -> VR_State.index -> VR_State.index -> VR_State.index -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)
+val on_newstate : VR_State.replica_state -> VR_State.index -> (VR_State.StateMachine.operation * VR_State.index * VR_State.index) list -> VR_State.index -> VR_State.index -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)
