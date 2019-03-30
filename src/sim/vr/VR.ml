@@ -81,8 +81,25 @@ let rec finished_workloads clients =
   | [] -> true
   | (c::clients) -> (finished_workload c) && (finished_workloads clients)
 
+let string_of_replica_state state = 
+  let rec string_of_log log str = 
+    match log with
+    | [] -> String.concat ([str; "]"])
+    | (op, c, s)::log -> string_of_log log (String.concat ([(Printf.sprintf "(%i,%i)" (int_of_index c) (int_of_index s));str])) in
+  let log = log state in
+  let commit_no = commit_no state in
+  String.concat (["[";(string_of_log log "");Printf.sprintf " commit_no %i" (int_of_index commit_no)])
+
 let string_of_trace trace level = 
   match trace with
-  | ReplicaTrace(i, n_packets, state, event, response) -> assert(false)
-  | ClientTrace(i, n_packets, state, event, response) -> assert(false)
+  | ReplicaTrace(i, n_packets, state, event, response) -> (
+    match level with
+      | High -> Printf.sprintf "replica %i; %s; %s; %i packets sent; %s" i event response n_packets (string_of_replica_state state)
+    | Medium -> Printf.sprintf "replica %i; %s; %s; %i packets sent" i event response n_packets
+    | Low -> Printf.sprintf "replica %i; %s" i event)
+  | ClientTrace(i, n_packets, state, event, response) -> (
+    match level with
+    | High -> Printf.sprintf "client %i; %s; %s; %i packets sent" i event response n_packets
+    | Medium -> Printf.sprintf "client %i; %s; %s; %i packets sent" i event response n_packets
+    | Low -> Printf.sprintf "client %i; %s" i event)
   | Null -> ""
