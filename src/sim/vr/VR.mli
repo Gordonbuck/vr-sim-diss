@@ -20,6 +20,7 @@ val start_replica: replica_state -> replica_state * protocol_event list * trace
 val recover_replica: replica_state -> replica_state * protocol_event list * trace
 val index_of_replica: replica_state -> int
 val check_consistency: replica_state list -> bool
+val replica_is_recovering: replica_state -> bool
 
 val on_client_message: client_message -> client_state -> client_state * protocol_event list * trace
 val on_client_timeout: client_timeout -> client_state -> client_state * protocol_event list * trace
@@ -30,5 +31,6 @@ val recover_client: client_state -> client_state * protocol_event list * trace
 val index_of_client: client_state -> int
 val gen_workload: client_state -> int -> client_state
 val finished_workloads: client_state list -> bool
+val client_is_recovering: client_state -> bool
 
 val string_of_trace: trace -> trace_level -> string

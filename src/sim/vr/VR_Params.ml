@@ -52,7 +52,11 @@ let n_replicas = 10
 
 let n_clients = 3
 
-let n_iterations = 1
+let max_replica_failures = 4
+
+let max_client_failures = 1
+
+let n_iterations = 100
 
 let workloads = [10; 15; 20]
 
@@ -93,3 +97,5 @@ let fail_client () =
 let termination = WorkCompletion
 
 let trace_level = Medium
+
+let show_trace = false

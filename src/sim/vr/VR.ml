@@ -50,6 +50,9 @@ let start_client = start_sending
 let recover_replica = begin_recovery
 let recover_client = begin_clientrecovery
 
+let replica_is_recovering state = (status state) = Recovering
+let client_is_recovering = client_recovering
+
 let compare_logs log1 log2 = 
   let rec compare_logs rlog1 rlog2 = 
     match rlog1 with
@@ -94,7 +97,7 @@ let string_of_trace trace level =
   match trace with
   | ReplicaTrace(i, n_packets, state, event, response) -> (
     match level with
-      | High -> Printf.sprintf "replica %i; %s; %s; %i packets sent; %s" i event response n_packets (string_of_replica_state state)
+    | High -> Printf.sprintf "replica %i; %s; %s; %i packets sent; %s" i event response n_packets (string_of_replica_state state)
     | Medium -> Printf.sprintf "replica %i; %s; %s; %i packets sent" i event response n_packets
     | Low -> Printf.sprintf "replica %i; %s" i event)
   | ClientTrace(i, n_packets, state, event, response) -> (

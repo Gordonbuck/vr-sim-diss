@@ -5,6 +5,8 @@ type trace_level = VR_State.trace_level
 
 val n_replicas: int
 val n_clients: int
+val max_replica_failures: int
+val max_client_failures: int
 val n_iterations: int
 val workloads: int list
 val drop_packet: unit -> bool
@@ -16,3 +18,4 @@ val fail_replica: unit -> float option
 val fail_client: unit -> float option
 val termination: termination_type
 val trace_level: trace_level
+val show_trace: bool
