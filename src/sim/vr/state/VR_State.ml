@@ -120,15 +120,15 @@ let get_request state n =
 let waiting_on_prepareoks state n =
   let received_prepareoks = List.map state.casted_prepareoks (fun m -> m >= n) in
   let indices = map_falses received_prepareoks (fun i -> i) in
-  indices
+  List.filteri indices (fun i _ -> i <> state.replica_no)
 
 let waiting_on_startviewchanges state =
   let indices = map_falses state.received_startviewchanges (fun i -> i) in
-  indices
+  List.filteri indices (fun i _ -> i <> state.replica_no)
 
 let waiting_on_recoveryresponses state = 
   let indices = map_falses state.received_recoveryresponses (fun i -> i) in
-  indices
+  List.filteri indices (fun i _ -> i <> state.replica_no)
 
 let is_primary state = state.view_no mod (List.length state.configuration) = state.replica_no
 
@@ -145,6 +145,8 @@ let commit_no state = state.commit_no
 let status state = state.status
 
 let log state = state.log
+
+let client_table state = state.client_table
 
 let quorum state = ((List.length state.configuration) / 2) + 1
 
@@ -278,31 +280,10 @@ let log_recoveryresponse state v x opt_p j =
    primary_recoveryresponse = primary_recoveryresponse;
   }
 
-let process_doviewchanges state = 
-  let rec process_doviewchanges doviewchanges view_no log last_normal_view_no op_no commit_no = 
-    match doviewchanges with 
-    | [] -> (view_no, log, op_no, commit_no)
-    | (v, l, v', n, k, i)::doviewchanges -> 
-      let view_no = if (v > view_no) then v else view_no in
-      let (log, last_normal_view_no, op_no) = 
-        if (v' > last_normal_view_no || (v' = last_normal_view_no && n > op_no)) then 
-          (l, v', n)
-        else
-          (log, last_normal_view_no, op_no) in
-      let commit_no = if (k > commit_no) then k else commit_no in
-      process_doviewchanges doviewchanges view_no log last_normal_view_no op_no commit_no in
-  let (view_no, log, op_no, commit_no) = process_doviewchanges state.doviewchanges (-1) [] (-1) (-1) (-1) in
-  ({state with 
-    view_no = view_no;
-    op_no = op_no;
-    log = log;
-    highest_seen_commit_no = commit_no;
-   }, commit_no)
-
 let become_primary state = 
   let waiting_prepareoks = List.init (max (state.op_no - state.highest_seen_commit_no) 0) (fun _ -> 0) in
   let received_startviewchanges = List.map state.received_startviewchanges (fun _ -> false) in
-  let casted_prepareoks = List.map state.casted_prepareoks (fun _ -> state.highest_seen_commit_no) in
+  let casted_prepareoks = List.map state.casted_prepareoks (fun _ -> -1) in
   let valid_timeout = state.valid_timeout + 1 in
   {state with 
     queued_prepares = [];
@@ -391,13 +372,39 @@ let process_queued_prepares state =
    queued_prepares = queued_prepares;
   }
 
+let process_doviewchanges state = 
+  let rec process_doviewchanges doviewchanges view_no log last_normal_view_no op_no commit_no = 
+    match doviewchanges with 
+    | [] -> (view_no, log, op_no, commit_no)
+    | (v, l, v', n, k, i)::doviewchanges -> 
+      let view_no = if (v > view_no) then v else view_no in
+      let (log, last_normal_view_no, op_no) = 
+        if (v' > last_normal_view_no || (v' = last_normal_view_no && n > op_no)) then 
+          (l, v', n)
+        else
+          (log, last_normal_view_no, op_no) in
+      let commit_no = if (k > commit_no) then k else commit_no in
+      process_doviewchanges doviewchanges view_no log last_normal_view_no op_no commit_no in
+  let (view_no, log, op_no, commit_no) = process_doviewchanges state.doviewchanges (-1) [] (-1) (-1) (-1) in
+  let state = update_client_table_requests state (List.rev log) in
+  ({state with 
+    view_no = view_no;
+    op_no = op_no;
+    log = log;
+    highest_seen_commit_no = commit_no;
+   }, commit_no)
+
 let commit state k =
   let rec commit_all state reqs replies = 
     match reqs with 
     | (op, c, s)::reqs -> 
       let mach = StateMachine.apply_op state.mach op in
       let res = StateMachine.last_res mach in
-      let state = update_client_table state c s ~res:(Some(res)) in
+      let (cte_s, _) = get_client_table_entry state c in
+      let state = 
+        if s >= cte_s then
+          update_client_table state c s ~res:(Some(res))
+        else state in
       let state = {state with mach = mach; } in
       commit_all state reqs (Unicast(ClientMessage(Reply(state.view_no, s, res)), int_of_index c)::replies)
     | [] -> (state, replies) in

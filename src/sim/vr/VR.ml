@@ -85,13 +85,18 @@ let rec finished_workloads clients =
   | (c::clients) -> (finished_workload c) && (finished_workloads clients)
 
 let string_of_replica_state state = 
+  let rec string_of_client_table ct c str = 
+    match ct with
+    | [] -> String.concat([str; "]"])
+    | (s, _)::ct -> string_of_client_table ct (c+1) (String.concat ([(Printf.sprintf "(%i,%i)" c (int_of_index s));str])) in
   let rec string_of_log log str = 
     match log with
     | [] -> String.concat ([str; "]"])
     | (op, c, s)::log -> string_of_log log (String.concat ([(Printf.sprintf "(%i,%i)" (int_of_index c) (int_of_index s));str])) in
   let log = log state in
   let commit_no = commit_no state in
-  String.concat (["[";(string_of_log log "");Printf.sprintf " commit_no %i" (int_of_index commit_no)])
+  let ct = client_table state in
+  String.concat (["[";(string_of_log log "");" [";(string_of_client_table ct 0 "");Printf.sprintf " commit_no %i" (int_of_index commit_no)])
 
 let string_of_trace trace level = 
   match trace with

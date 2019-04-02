@@ -99,6 +99,14 @@ module Simulator (P : Protocol_type)
       else Printf.printf "time %f; %s\n" (T.float_of_t t) string_trace
     else ()
 
+  let client_broadcast_indices state = 
+    (List.init (Params.n_replicas) (fun i -> i), 
+     List.filteri (List.init (Params.n_clients) (fun i -> i)) (fun i _ -> i <> (P.index_of_client state.protocol_state)))
+
+  let replica_broadcast_indices state = 
+    (List.filteri (List.init (Params.n_replicas) (fun i -> i)) (fun i _ -> i <> (P.index_of_replica state.protocol_state)),
+     List.init (Params.n_clients) (fun i -> i))
+
       (* protocol events *)
 
   let rec build_replica_msg_events t i msg = 
@@ -140,28 +148,28 @@ module Simulator (P : Protocol_type)
     | P.ReplicaMessage(msg) -> build_replica_msg_events t i msg
     | P.ClientMessage(msg) -> build_client_msg_events t i msg
 
-  and broadcast_msg_to_events t msg = 
+  and broadcast_msg_to_events t msg (r_inds, c_inds) = 
     match msg with
     | P.ReplicaMessage(msg) -> 
-      List.fold (List.init (Params.n_replicas) (fun i -> build_replica_msg_events t i msg)) ~init:[] ~f:(List.append)
+      List.fold (List.map r_inds (fun i -> build_replica_msg_events t i msg)) ~init:[] ~f:(List.append)
     | P.ClientMessage(msg) -> 
-      List.fold (List.init (Params.n_clients) (fun i -> build_client_msg_events t i msg)) ~init:[] ~f:(List.append)
+      List.fold (List.map c_inds (fun i -> build_client_msg_events t i msg)) ~init:[] ~f:(List.append)
 
-  and comm_to_events t comm = 
+  and comm_to_events t comm inds = 
     match comm with
     | P.Unicast(msg, i) -> msg_to_events t i msg
-    | P.Broadcast(msg) -> broadcast_msg_to_events t msg
+    | P.Broadcast(msg) -> broadcast_msg_to_events t msg inds
     | P.Multicast(msg, indices) -> 
       List.fold (List.map indices (fun i -> msg_to_events t i msg)) ~init:[] ~f:(List.append)
 
-  and protocol_events_to_events t pevents = 
+  and protocol_events_to_events t pevents inds = 
     let rec inner l acc =
       match l with
       | [] -> acc
       | e::l ->
         let new_events = 
           match e with
-          | P.Communication(comm) -> comm_to_events t comm
+          | P.Communication(comm) -> comm_to_events t comm inds
           | P.Timeout(timeout) -> [timeout_to_event t timeout] in
         inner l (new_events@acc) in
     inner pevents []
@@ -171,7 +179,8 @@ module Simulator (P : Protocol_type)
       (state, [])
     else
       let (protocol_state, pevents, trace) = comp state.protocol_state in
-      let events = protocol_events_to_events t pevents in
+      let inds = replica_broadcast_indices state in
+      let events = protocol_events_to_events t pevents inds in
       print_trace t trace;
       ({state with 
         protocol_state = protocol_state;
@@ -182,7 +191,8 @@ module Simulator (P : Protocol_type)
       (state, [])
     else
       let (protocol_state, pevents, trace) = comp state.protocol_state in
-      let events = protocol_events_to_events t pevents in
+      let inds = client_broadcast_indices state in
+      let events = protocol_events_to_events t pevents inds in
       print_trace t trace;
       ({state with 
         protocol_state = protocol_state;
@@ -206,7 +216,8 @@ module Simulator (P : Protocol_type)
 
   let recover_replica t state = 
     let (protocol_state, pevents, trace) = P.recover_replica state.protocol_state in
-    let events = protocol_events_to_events t pevents in
+    let inds = replica_broadcast_indices state in
+    let events = protocol_events_to_events t pevents inds in
     print_trace t trace;
     ({alive = true;
       protocol_state = protocol_state;
@@ -214,7 +225,8 @@ module Simulator (P : Protocol_type)
 
   let recover_client t state = 
     let (protocol_state, pevents, trace) = P.recover_client state.protocol_state in
-    let events = protocol_events_to_events t pevents in
+    let inds = client_broadcast_indices state in
+    let events = protocol_events_to_events t pevents inds in
     print_trace t trace;
     ({alive = true;
       protocol_state = protocol_state;
@@ -283,21 +295,23 @@ module Simulator (P : Protocol_type)
     | Ok(protocol_states) -> List.map protocol_states (fun s -> {alive = true; protocol_state = s})
 
   let initial_replica_events t states = 
-    let (states, pevents_l) = List.unzip (List.map states (fun s -> 
-        let (protocol_state, pevents, _) = P.start_replica s.protocol_state in
-        ({s with protocol_state = protocol_state;}, pevents)
+    let (states, events_l) = List.unzip (List.map states (fun state -> 
+        let (protocol_state, pevents, _) = P.start_replica state.protocol_state in
+        let inds = replica_broadcast_indices state in
+        let events = protocol_events_to_events t pevents inds in
+        ({state with protocol_state = protocol_state;}, events)
       )) in
-    let pevents = List.fold pevents_l ~init:[] ~f:List.append in
-    let events = protocol_events_to_events t pevents in
+    let events = List.fold events_l ~init:[] ~f:List.append in
     (states, events)
 
   let initial_client_events t states = 
-    let (states, pevents_l) = List.unzip (List.map states (fun s -> 
-        let (protocol_state, pevents, _) = P.start_client s.protocol_state in
-        ({s with protocol_state = protocol_state;}, pevents)
+    let (states, events_l) = List.unzip (List.map states (fun state -> 
+        let (protocol_state, pevents, _) = P.start_client state.protocol_state in
+        let inds = client_broadcast_indices state in
+        let events = protocol_events_to_events t pevents inds in
+        ({state with protocol_state = protocol_state;}, events)
       )) in
-    let pevents = List.fold pevents_l ~init:[] ~f:List.append in
-    let events = protocol_events_to_events t pevents in
+    let events = List.fold events_l ~init:[] ~f:List.append in
     (states, events)
 
       (* termination *)
@@ -359,6 +373,7 @@ module Simulator (P : Protocol_type)
         let eventlist = EL.add_multi (EL.add_multi (EL.create compare_events) replica_events) client_events in
         Printf.printf "Simulation number %n\n" i; 
         sim_loop (T.t_of_float 0.) replicas clients eventlist;
+        Printf.printf "%!";
         inner (i + 1) in
     inner (1)
 

@@ -100,6 +100,7 @@ val op_no: replica_state -> index
 val commit_no: replica_state -> index
 val status: replica_state -> status
 val log: replica_state -> (StateMachine.operation * index * index) list
+val client_table: replica_state -> (index * StateMachine.result option) list
 
 val quorum: replica_state -> int
 val commited_requests: replica_state -> (StateMachine.operation * int * int) list

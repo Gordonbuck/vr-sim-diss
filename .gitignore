@@ -11,3 +11,4 @@ setup.log
 setup.bin
 
 src/spl/splc
+data/*

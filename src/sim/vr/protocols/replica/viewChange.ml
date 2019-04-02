@@ -16,8 +16,8 @@ let on_startviewchange state v i =
     let received_startviewchange = received_startviewchange state i in
     if received_startviewchange then
       (* already received a startviewchange from this replica*)
-      let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "already received start view change from this replica") in
-      (state, [], trace)
+      let trace = ReplicaTrace(int_of_index (replica_no state), 1, state, trace_event, "already received start view change from this replica, re-sending") in
+      (state, [Communication(Unicast(ReplicaMessage(StartViewChange(view_no state, replica_no state)), int_of_index i))], trace)
     else
       let state = log_startviewchange state i in
       let f = (quorum state) - 1 in
@@ -34,8 +34,11 @@ let on_startviewchange state v i =
         else (0, [], "waiting on more start view changes") in
       let trace = ReplicaTrace(int_of_index (replica_no state), n_packets, state, trace_event, trace_details) in
       (state, events, trace)
+  else if v = (view_no state) && (status state) = Normal then
+    let trace = ReplicaTrace(int_of_index (replica_no state), 1, state, trace_event, "already recovered, re-sending start view change") in
+    (state, [Communication(Unicast(ReplicaMessage(StartViewChange(view_no state, replica_no state)), int_of_index i))], trace)
   else
-    let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "not new view number / recovering") in
+    let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "old view number / recovering") in
     (state, [], trace)
 
 let on_doviewchange state v l v' n k i =
@@ -82,6 +85,7 @@ let on_startview state v l n k =
     let state = set_view_no state v in
     let state = set_op_no state n in
     let state = set_log state l in
+    let state = set_status state Normal in
     let state = become_replica state in
     let (state, _) = commit state k in
     let (n_packets, events, trace_details) = 

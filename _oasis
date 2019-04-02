@@ -9,9 +9,15 @@ Plugins: META (0.4), DevFiles (0.4)
 BuildDepends: core, threads
 
 Executable "main"
-  Path: src/sim
+  Path: src
   MainIs: main.ml
   CompiledObject: best
+  BuildDepends: vr, sim
+
+Library "sim"
+  Path: src/sim
+  Modules: Simulator
+  InternalModules: EventList, SimTime
   BuildDepends: vr
 
 Library "vr"

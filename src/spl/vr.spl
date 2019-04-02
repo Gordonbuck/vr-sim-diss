@@ -1,0 +1,24 @@
+automaton vr() {
+  Initialize;
+  either {
+    Become_Primary;
+  } or {
+    Become_Replica;
+  }
+  multiple {
+    either {
+      BeginViewChange;
+    } or {
+      Recover;
+    }
+    either {
+      Become_Primary;
+    } or {
+      Become_Replica;
+    }
+  }  
+}
+
+automaton normal() {
+  
+}

@@ -48,15 +48,15 @@ let sample_truncatednormal_boxmuller mu stdv lower =
 include VR_State
 type termination_type = Timelimit of float | WorkCompletion
 
-let n_replicas = 10
+let n_replicas = 11
 
 let n_clients = 3
 
-let max_replica_failures = 4
+let max_replica_failures = 5
 
 let max_client_failures = 1
 
-let n_iterations = 100
+let n_iterations = 1
 
 let workloads = [10; 15; 20]
 
@@ -96,6 +96,6 @@ let fail_client () =
 
 let termination = WorkCompletion
 
-let trace_level = Medium
+let trace_level = High
 
-let show_trace = false
+let show_trace = true
