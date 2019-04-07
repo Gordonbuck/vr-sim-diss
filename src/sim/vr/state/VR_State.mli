@@ -86,6 +86,9 @@ val client_no_received_clientrecoveryresponses: client_state -> int
 
 val waiting_on_clientrecoveryresponses: client_state -> index list
 
+val safety_monitor: replica_state -> VR_Safety_Monitor.t
+val update_monitor: replica_state -> VR_Safety_Monitor.t -> replica_state
+
 val get_request: replica_state -> index -> (StateMachine.operation * index * index)
 
 val waiting_on_prepareoks: replica_state -> index -> index list

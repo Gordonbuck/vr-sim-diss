@@ -1,24 +1,72 @@
-automaton vr() {
-  Initialize;
+function normal() {
   either {
-    Become_Primary;
+    multiple {
+      either {
+        Receive_Prepare;
+        optional { Send_Prepareok; }
+      } or {
+        Receive_Commit;
+      } or {
+        Receive_Recovery;
+        Send_Recoveryresponse;
+      }
+    }
   } or {
-    Become_Replica;
+    multiple {
+      either {
+        Receive_Request;
+        optional { 
+            either {
+              Send_Prepare;
+            } or {
+              Send_Reply;
+            }
+        }
+      } or {
+        Receive_Prepareok;
+        optional { Send_Reply; }
+      } or {
+        Send_Commit;
+      } or {
+        Receive_Recovery;
+        Send_Recoveryresponse;
+      }
+    }
   }
-  multiple {
-    either {
-      BeginViewChange;
-    } or {
-      Recover;
-    }
-    either {
-      Become_Primary;
-    } or {
-      Become_Replica;
-    }
-  }  
 }
 
-automaton normal() {
-  
+function viewchange() {
+  Send_Startviewchange;
+  either {
+    optional { 
+      Receive_Startviewchanges; 
+      Send_Doviewchange;
+    }
+    Receive_Doviewchanges;
+    Send_Startview;
+    optional { Send_Reply; }
+  } or {
+    Receive_Startviewchanges;
+    Send_Doviewchange;
+  }
+}
+
+function recovery() {
+  Send_Recovery;
+  Receive_Recoveryresponses;
+}
+
+automaton vr() {
+  during {
+    either {
+      normal();
+    } or {
+      viewchange();
+    } or {
+      recovery();
+    }
+  } handle {
+    Receive_Startview;
+    optional { Send_Prepareok; }
+  }
 }

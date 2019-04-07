@@ -107,27 +107,51 @@ module Simulator (P : Protocol_type)
     (List.filteri (List.init (Params.n_replicas) (fun i -> i)) (fun i _ -> i <> (P.index_of_replica state.protocol_state)),
      List.init (Params.n_clients) (fun i -> i))
 
+  let client_message_times state = 
+    (List.init (Params.n_replicas) (fun i -> Params.packet_delay ()), 
+     List.init (Params.n_clients) (fun i -> if i = (P.index_of_client state.protocol_state) then 0. else Params.packet_delay ()))
+
+  let replica_message_times state = 
+    (List.init (Params.n_replicas) (fun i -> if i = (P.index_of_replica state.protocol_state) then 0. else Params.packet_delay ()), 
+     List.init (Params.n_clients) (fun i -> Params.packet_delay ()))
+
       (* protocol events *)
 
-  let rec build_replica_msg_events t i msg = 
+  let rec build_replica_msg_events t i msg r_msg_times = 
     if Params.drop_packet () then
       []
     else
-      let t1 = T.inc t (T.span_of_float (Params.packet_delay ())) in
+      let span_f = 
+        match List.nth r_msg_times i with 
+        | None -> assert(false)
+        | Some(span) -> span in
+      let t1 = T.inc t (T.span_of_float (span_f)) in
       let events = [ReplicaEvent(t1, i, replica_protocol_event t1 (P.on_replica_message msg))] in
       if Params.duplicate_packet () then
-        let t2 = T.inc t (T.span_of_float (Params.packet_delay ())) in
+        let span_f = 
+          match List.nth r_msg_times i with 
+          | None -> assert(false)
+          | Some(span) -> span in
+        let t2 = T.inc t (T.span_of_float (span_f)) in
         ReplicaEvent(t2, i, replica_protocol_event t2 (P.on_replica_message msg))::events
       else
         events
-  and build_client_msg_events t i msg = 
+  and build_client_msg_events t i msg c_msg_times = 
     if Params.drop_packet () then
       []
     else
-      let t1 = T.inc t (T.span_of_float (Params.packet_delay ())) in
+      let span_f = 
+        match List.nth c_msg_times i with 
+        | None -> assert(false)
+        | Some(span) -> span in
+      let t1 = T.inc t (T.span_of_float (span_f)) in
       let events = [ClientEvent(t1, i, client_protocol_event t1 (P.on_client_message msg))] in
       if Params.duplicate_packet () then
-        let t2 = T.inc t (T.span_of_float (Params.packet_delay ())) in
+        let span_f = 
+          match List.nth c_msg_times i with 
+          | None -> assert(false)
+          | Some(span) -> span in
+        let t2 = T.inc t (T.span_of_float (span_f)) in
         ClientEvent(t2, i, client_protocol_event t2 (P.on_client_message msg))::events
       else
         events
@@ -143,33 +167,33 @@ module Simulator (P : Protocol_type)
     | P.ReplicaTimeout(timeout, i) -> build_replica_timeout_event t i timeout
     | P.ClientTimeout(timeout, i) -> build_client_timeout_event t i timeout
 
-  and msg_to_events t i msg = 
+  and msg_to_events t i msg (r_msg_times, c_msg_times) = 
     match msg with
-    | P.ReplicaMessage(msg) -> build_replica_msg_events t i msg
-    | P.ClientMessage(msg) -> build_client_msg_events t i msg
+    | P.ReplicaMessage(msg) -> build_replica_msg_events t i msg r_msg_times 
+    | P.ClientMessage(msg) -> build_client_msg_events t i msg c_msg_times
 
-  and broadcast_msg_to_events t msg (r_inds, c_inds) = 
+  and broadcast_msg_to_events t msg (r_inds, c_inds) (r_msg_times, c_msg_times) = 
     match msg with
     | P.ReplicaMessage(msg) -> 
-      List.fold (List.map r_inds (fun i -> build_replica_msg_events t i msg)) ~init:[] ~f:(List.append)
+      List.fold (List.map r_inds (fun i -> build_replica_msg_events t i msg r_msg_times)) ~init:[] ~f:(List.append)
     | P.ClientMessage(msg) -> 
-      List.fold (List.map c_inds (fun i -> build_client_msg_events t i msg)) ~init:[] ~f:(List.append)
+      List.fold (List.map c_inds (fun i -> build_client_msg_events t i msg c_msg_times)) ~init:[] ~f:(List.append)
 
-  and comm_to_events t comm inds = 
+  and comm_to_events t comm inds msg_times = 
     match comm with
-    | P.Unicast(msg, i) -> msg_to_events t i msg
-    | P.Broadcast(msg) -> broadcast_msg_to_events t msg inds
+    | P.Unicast(msg, i) -> msg_to_events t i msg msg_times
+    | P.Broadcast(msg) -> broadcast_msg_to_events t msg inds msg_times
     | P.Multicast(msg, indices) -> 
-      List.fold (List.map indices (fun i -> msg_to_events t i msg)) ~init:[] ~f:(List.append)
+      List.fold (List.map indices (fun i -> msg_to_events t i msg msg_times)) ~init:[] ~f:(List.append)
 
-  and protocol_events_to_events t pevents inds = 
+  and protocol_events_to_events t pevents inds msg_times = 
     let rec inner l acc =
       match l with
       | [] -> acc
       | e::l ->
         let new_events = 
           match e with
-          | P.Communication(comm) -> comm_to_events t comm inds
+          | P.Communication(comm) -> comm_to_events t comm inds msg_times
           | P.Timeout(timeout) -> [timeout_to_event t timeout] in
         inner l (new_events@acc) in
     inner pevents []
@@ -180,7 +204,8 @@ module Simulator (P : Protocol_type)
     else
       let (protocol_state, pevents, trace) = comp state.protocol_state in
       let inds = replica_broadcast_indices state in
-      let events = protocol_events_to_events t pevents inds in
+      let msg_times = replica_message_times state in
+      let events = protocol_events_to_events t pevents inds msg_times in
       print_trace t trace;
       ({state with 
         protocol_state = protocol_state;
@@ -192,7 +217,8 @@ module Simulator (P : Protocol_type)
     else
       let (protocol_state, pevents, trace) = comp state.protocol_state in
       let inds = client_broadcast_indices state in
-      let events = protocol_events_to_events t pevents inds in
+      let msg_times = client_message_times state in
+      let events = protocol_events_to_events t pevents inds msg_times in
       print_trace t trace;
       ({state with 
         protocol_state = protocol_state;
@@ -217,7 +243,8 @@ module Simulator (P : Protocol_type)
   let recover_replica t state = 
     let (protocol_state, pevents, trace) = P.recover_replica state.protocol_state in
     let inds = replica_broadcast_indices state in
-    let events = protocol_events_to_events t pevents inds in
+    let msg_times = replica_message_times state in 
+    let events = protocol_events_to_events t pevents inds msg_times in
     print_trace t trace;
     ({alive = true;
       protocol_state = protocol_state;
@@ -226,7 +253,8 @@ module Simulator (P : Protocol_type)
   let recover_client t state = 
     let (protocol_state, pevents, trace) = P.recover_client state.protocol_state in
     let inds = client_broadcast_indices state in
-    let events = protocol_events_to_events t pevents inds in
+    let msg_times = client_message_times state in 
+    let events = protocol_events_to_events t pevents inds msg_times in
     print_trace t trace;
     ({alive = true;
       protocol_state = protocol_state;
@@ -296,9 +324,11 @@ module Simulator (P : Protocol_type)
 
   let initial_replica_events t states = 
     let (states, events_l) = List.unzip (List.map states (fun state -> 
-        let (protocol_state, pevents, _) = P.start_replica state.protocol_state in
+        let (protocol_state, pevents, trace) = P.start_replica state.protocol_state in
         let inds = replica_broadcast_indices state in
-        let events = protocol_events_to_events t pevents inds in
+        let msg_times = replica_message_times state in
+        let events = protocol_events_to_events t pevents inds msg_times in
+        print_trace t trace;
         ({state with protocol_state = protocol_state;}, events)
       )) in
     let events = List.fold events_l ~init:[] ~f:List.append in
@@ -306,9 +336,11 @@ module Simulator (P : Protocol_type)
 
   let initial_client_events t states = 
     let (states, events_l) = List.unzip (List.map states (fun state -> 
-        let (protocol_state, pevents, _) = P.start_client state.protocol_state in
+        let (protocol_state, pevents, trace) = P.start_client state.protocol_state in
         let inds = client_broadcast_indices state in
-        let events = protocol_events_to_events t pevents inds in
+        let  msg_times = client_message_times state in
+        let events = protocol_events_to_events t pevents inds msg_times in
+        print_trace t trace;
         ({state with protocol_state = protocol_state;}, events)
       )) in
     let events = List.fold events_l ~init:[] ~f:List.append in
@@ -360,7 +392,7 @@ module Simulator (P : Protocol_type)
         if P.check_consistency protocol_replicas then
           sim_loop t replicas clients eventlist
         else
-          Printf.printf "Consistency check failed, terminating\n"
+          (Printf.printf "Consistency check failed, terminating\n"; exit 0)
 
   let run () = 
     let rec inner i = 
@@ -371,7 +403,6 @@ module Simulator (P : Protocol_type)
         let (replicas, replica_events) = initial_replica_events (T.t_of_float 0.) replicas in
         let (clients, client_events) = initial_client_events (T.t_of_float 0.) clients in
         let eventlist = EL.add_multi (EL.add_multi (EL.create compare_events) replica_events) client_events in
-        Printf.printf "Simulation number %n\n" i; 
         sim_loop (T.t_of_float 0.) replicas clients eventlist;
         Printf.printf "%!";
         inner (i + 1) in

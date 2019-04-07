@@ -1,7 +1,11 @@
 type t = float
 type span = float
 
-let compare t1 t2 = int_of_float (t1 -. t2)
+let compare t1 t2 = 
+  let d = t1 -. t2 in 
+  if (d > 0.) then 1
+  else if (d < 0.) then -1
+  else 0
 
 let diff t1 t2 = abs_float (t1 -. t2)
 

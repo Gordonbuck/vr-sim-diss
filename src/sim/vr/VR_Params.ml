@@ -56,7 +56,7 @@ let max_replica_failures = 5
 
 let max_client_failures = 1
 
-let n_iterations = 1
+let n_iterations = 100
 
 let workloads = [10; 15; 20]
 
@@ -87,15 +87,15 @@ let time_for_client_timeout timeout =
   | ClientRecoveryTimeout(_) -> 30.
 
 let fail_replica () = 
-  let i = Random.int 10000 in
+  let i = Random.int 100 in
   if i < 1 then Some(sample_truncatednormal_boxmuller 50. 400. 50.) else None
 
 let fail_client () = 
-  let i = Random.int 10000 in
+  let i = Random.int 100 in
   if i < 1 then Some(sample_truncatednormal_boxmuller 50. 400. 50.) else None
 
 let termination = WorkCompletion
 
 let trace_level = High
 
-let show_trace = true
+let show_trace = false

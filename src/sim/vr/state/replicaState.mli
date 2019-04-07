@@ -29,6 +29,7 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) : sig
     valid_timeout : int;
     no_primary_comms : int;
     mach : StateMachine.t;
+    monitor : VR_Safety_Monitor.t
   }
 
   type replica_message =

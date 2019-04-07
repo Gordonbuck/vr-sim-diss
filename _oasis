@@ -6,7 +6,7 @@ License: MIT
 OASISFormat: 0.4
 BuildTools: ocamlbuild
 Plugins: META (0.4), DevFiles (0.4)
-BuildDepends: core, threads
+BuildDepends: core, oUnit, threads
 
 Executable "main"
   Path: src
@@ -14,10 +14,15 @@ Executable "main"
   CompiledObject: best
   BuildDepends: vr, sim
 
+Executable "test"
+  Path: test
+  MainIs: test.ml
+  CompiledObject: best
+  BuildDepends: vr, sim, vr_state
+
 Library "sim"
   Path: src/sim
-  Modules: Simulator
-  InternalModules: EventList, SimTime
+  Modules: Simulator, EventList, SimTime
   BuildDepends: vr
 
 Library "vr"
@@ -29,6 +34,7 @@ Library "vr_state"
   Path: src/sim/vr/state
   Modules: VR_State, StateMachine
   InternalModules: ClientState, ReplicaState
+  BuildDepends: spl
 
 Library "vr_client"
   Path: src/sim/vr/protocols/client
@@ -38,9 +44,13 @@ Library "vr_client"
 Library "vr_replica"
   Path: src/sim/vr/protocols/replica
   Modules: Normal, Recovery, StateTransfer, ViewChange
-  BuildDepends: vr_state
+  BuildDepends: vr_state, spl
 
 Library "vr_timeouts"
   Path: src/sim/vr/timeouts
   Modules: ClientTimeouts, ReplicaTimeouts
-  BuildDepends: vr_state, vr_replica
+  BuildDepends: vr_state, vr_replica, spl
+
+Library "spl"
+  Path: src/spl
+  Modules: VR_Safety_Monitor, VR_Statecalls

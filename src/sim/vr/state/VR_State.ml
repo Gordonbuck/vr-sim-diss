@@ -18,6 +18,9 @@ type trace =
   | ClientTrace of int * int * client_state * string * string
   | Null
 
+let safety_monitor state = state.monitor
+let update_monitor state monitor = { state with monitor = monitor; }
+
 let index_of_int i = if i < -1 then assert(false) else i
 let int_of_index i = i
 
@@ -120,15 +123,15 @@ let get_request state n =
 let waiting_on_prepareoks state n =
   let received_prepareoks = List.map state.casted_prepareoks (fun m -> m >= n) in
   let indices = map_falses received_prepareoks (fun i -> i) in
-  List.filteri indices (fun i _ -> i <> state.replica_no)
+  List.filter indices (fun i -> i <> state.replica_no)
 
 let waiting_on_startviewchanges state =
   let indices = map_falses state.received_startviewchanges (fun i -> i) in
-  List.filteri indices (fun i _ -> i <> state.replica_no)
+  List.filter indices (fun i -> i <> state.replica_no)
 
 let waiting_on_recoveryresponses state = 
   let indices = map_falses state.received_recoveryresponses (fun i -> i) in
-  List.filteri indices (fun i _ -> i <> state.replica_no)
+  List.filter indices (fun i -> i <> state.replica_no)
 
 let is_primary state = state.view_no mod (List.length state.configuration) = state.replica_no
 
