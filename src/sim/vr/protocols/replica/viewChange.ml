@@ -2,8 +2,8 @@ open Core
 open VR_State
 
 let notice_viewchange state trace_event = 
-  let state = update_monitor state (VR_Safety_Monitor.init ()) in
-  let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Send_Startviewchange) in
+  let state = if status state <> ViewChange then reset_monitor state else state in
+  let state = update_monitor state `Send_Startviewchange in
   let state = set_status state ViewChange in
   let state = increment_view_no state in
   let trace = ReplicaTrace(int_of_index (replica_no state), n_replicas state, state, trace_event, "broadcasting start view change") in
@@ -22,13 +22,13 @@ let on_startviewchange state v i =
       (state, [Communication(Unicast(ReplicaMessage(StartViewChange(view_no state, replica_no state)), int_of_index i))], trace)
     else
       let state = log_startviewchange state i in
+      let state = update_monitor state `Receive_Startviewchange in
       let f = (quorum state) - 1 in
       let primary_no = primary_no state in
       let no_startviewchanges = no_received_startviewchanges state in
       let (n_packets, events, trace_details) = 
         if (no_startviewchanges = f) then
-          let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Receive_Startviewchanges) in
-          let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Send_Doviewchange) in
+          let state = update_monitor state `Send_Doviewchange in
           let msg = DoViewChange(view_no state, log state, last_normal_view_no state, op_no state, commit_no state, replica_no state) in
           let comm = Unicast(ReplicaMessage(msg), int_of_index primary_no) in
           (1, [Communication(comm); Timeout(ReplicaTimeout(DoViewChangeTimeout(valid_timeout state), int_of_index (replica_no state)));
@@ -63,17 +63,17 @@ let on_doviewchange state v l v' n k i =
       (state, [], trace)
     else  
       let state = log_doviewchange state v l v' n k i in
+      let state = update_monitor state `Receive_Doviewchange in
       let no_doviewchanges = no_received_doviewchanges state in
       let q = quorum state in
       if (no_doviewchanges = q) then
-        let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Receive_Doviewchanges) in
-        let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Send_Startview) in
+        let state = update_monitor state `Send_Startview in
         let (state, k) = process_doviewchanges state in
         let state = set_status state Normal in
         let state = become_primary state in
         let (state, replies) = commit state k in
-        let state = if (List.length replies > 0) then update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Send_Reply) else state in
-        let state = update_monitor state (VR_Safety_Monitor.init ()) in
+        let state = if (List.length replies > 0) then update_monitor state `Send_Reply else state in
+        let state = reset_monitor state in
         let events = List.map replies (fun c -> Communication(c)) in
         let timeout = ReplicaTimeout(HeartbeatTimeout(valid_timeout state, op_no state), int_of_index (replica_no state)) in
         let comm = Broadcast(ReplicaMessage(StartView(view_no state, log state, op_no state, commit_no state))) in
@@ -89,7 +89,7 @@ let on_startview state v l n k =
     let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "old view number / recovering / already in view") in
     (state, [], trace)
   else
-    let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Receive_Startview) in
+    let state = update_monitor state `Receive_Startview in
     let state = set_view_no state v in
     let state = set_op_no state n in
     let state = set_log state l in
@@ -102,8 +102,8 @@ let on_startview state v l n k =
          "started view, sending prepareok for noncommitted operations")
       else
         (0, [], "started view") in
-    let state = if ((commit_no state) < (op_no state)) then update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Send_Prepareok) else state in
-    let state = update_monitor state (VR_Safety_Monitor.init ()) in
+    let state = if ((commit_no state) < (op_no state)) then update_monitor state `Send_Prepareok else state in
+    let state = reset_monitor state in
     let trace = ReplicaTrace(int_of_index (replica_no state), n_packets, state, trace_event, trace_details) in
     (state, Timeout(ReplicaTimeout(PrimaryTimeout(valid_timeout state, no_primary_comms state), int_of_index (replica_no state)))::events, trace)
 

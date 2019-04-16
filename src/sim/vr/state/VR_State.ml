@@ -18,8 +18,21 @@ type trace =
   | ClientTrace of int * int * client_state * string * string
   | Null
 
-let safety_monitor state = state.monitor
-let update_monitor state monitor = { state with monitor = monitor; }
+let quorum state = ((List.length state.configuration) / 2) + 1
+
+let reset_monitor state = 
+  let (statecalls, _) = state.monitor in
+  {state with monitor = (statecalls, VR_Safety_Monitor.init ~q:(quorum state))}
+
+let update_monitor state statecall = 
+  let (statecalls, monitor) = state.monitor in
+  {state with monitor = (statecall::statecalls, VR_Safety_Monitor.tick monitor statecall)}
+
+let statecalls state = 
+  let (statecalls, monitor) = state.monitor in
+  statecalls
+
+let print_statecalls state = Printf.printf "\n%s\n" (String.concat ~sep:" " (List.map (statecalls state) VR_Statecalls.string_of_statecall))
 
 let index_of_int i = if i < -1 then assert(false) else i
 let int_of_index i = i
@@ -150,8 +163,6 @@ let status state = state.status
 let log state = state.log
 
 let client_table state = state.client_table
-
-let quorum state = ((List.length state.configuration) / 2) + 1
 
 let commited_requests state = List.rev (List.drop state.log (List.length state.log - 1 - state.commit_no))
 

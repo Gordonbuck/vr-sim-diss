@@ -35,35 +35,49 @@ function normal() {
   }
 }
 
-function viewchange() {
+function viewchange(int n_svcs, int n_dvcs, int q) {
   Send_Startviewchange;
-  either {
-    optional { 
-      Receive_Startviewchanges; 
+  do {
+    either {
+      Receive_Startviewchange;
+      n_svcs = n_svcs + 1;
+    } or {
+      Receive_Doviewchange;
+      n_dvcs = n_dvcs + 1;
+    } or {
+      Send_Startviewchange;
+      n_svcs = 0;
+    } or (n_svcs == q-1) {
       Send_Doviewchange;
     }
-    Receive_Doviewchanges;
-    Send_Startview;
-    optional { Send_Reply; }
-  } or {
-    Receive_Startviewchanges;
-    Send_Doviewchange;
+  } until (n_dvcs == q);
+  Send_Startview;
+  optional {
+    Send_Reply;
   }
 }
 
-function recovery() {
+function recovery(int n_rrs, bool prr, int q) {
   Send_Recovery;
-  Receive_Recoveryresponses;
+  do {
+    Receive_Recoveryresponse;
+    n_rrs = n_rrs + 1;
+    optional {
+      Receive_Primaryrecoveryresponse;
+      prr = true;
+    }
+  } until (n_rrs >= q && prr);
+  Finish_Recovering;
 }
 
-automaton vr() {
+automaton vr(int n_svcs, int n_dvcs, int n_rrs, bool prr, int q) {
   during {
     either {
       normal();
     } or {
-      viewchange();
+      viewchange(n_svcs, n_dvcs, q);
     } or {
-      recovery();
+      recovery(n_rrs, prr, q);
     }
   } handle {
     Receive_Startview;

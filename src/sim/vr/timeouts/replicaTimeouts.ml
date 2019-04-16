@@ -6,7 +6,7 @@ open ViewChange
 let on_heartbeat_timeout state v n = 
   if (valid_timeout state) = v && (op_no state) = n then
     (* send commit message as heartbeat *)
-    let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Send_Commit) in
+    let state = update_monitor state  `Send_Commit in
     let trace = ReplicaTrace(int_of_index (replica_no state), n_replicas state, state, "heartbeat timeout", "broadcasting commit") in
     (state, [Communication(Broadcast(ReplicaMessage(Commit(view_no state, commit_no state)))); 
              Timeout(ReplicaTimeout(HeartbeatTimeout(valid_timeout state, op_no state), int_of_index (replica_no state)))], trace)

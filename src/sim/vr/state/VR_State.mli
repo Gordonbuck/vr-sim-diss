@@ -49,6 +49,10 @@ type trace =
   | ClientTrace of int * int * client_state * string * string
   | Null
 
+val reset_monitor: replica_state -> replica_state
+val update_monitor: replica_state -> VR_Safety_Monitor.s -> replica_state
+val statecalls: replica_state -> VR_Safety_Monitor.s list
+
 val index_of_int: int -> index
 val int_of_index: index -> int
 
@@ -85,9 +89,6 @@ val client_quorum: client_state -> int
 val client_no_received_clientrecoveryresponses: client_state -> int
 
 val waiting_on_clientrecoveryresponses: client_state -> index list
-
-val safety_monitor: replica_state -> VR_Safety_Monitor.t
-val update_monitor: replica_state -> VR_Safety_Monitor.t -> replica_state
 
 val get_request: replica_state -> index -> (StateMachine.operation * index * index)
 

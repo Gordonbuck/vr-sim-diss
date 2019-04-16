@@ -2,28 +2,30 @@
 exception Bad_statecall
 
 type s = [
-  |`Receive_Doviewchanges
   |`Send_Recovery
   |`Send_Startviewchange
-  |`Receive_Startviewchanges
-  |`Receive_Recoveryresponses
   |`Receive_Prepare
   |`Send_Recoveryresponse
+  |`Receive_Startviewchange
   |`Send_Startview
   |`Send_Commit
   |`Receive_Startview
+  |`Receive_Doviewchange
   |`Receive_Recovery
+  |`Receive_Primaryrecoveryresponse
+  |`Finish_Recovering
   |`Send_Reply
   |`Send_Prepare
   |`Send_Prepareok
   |`Receive_Prepareok
   |`Receive_Request
   |`Receive_Commit
+  |`Receive_Recoveryresponse
   |`Send_Doviewchange
 ]
 
 type t
-val init : unit -> t
+val init : q:int -> t
 val pagefn : out_channel -> unit
 val set_cfn : t -> (unit -> (out_channel * in_channel)) -> unit
 val tick : t -> [> s] -> t

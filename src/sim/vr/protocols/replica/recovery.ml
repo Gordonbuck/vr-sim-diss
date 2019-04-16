@@ -3,7 +3,7 @@ open VR_State
 
 let begin_recovery state = 
   let state = set_status state Recovering in
-  let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Send_Recovery) in
+  let state = update_monitor state `Send_Recovery in
   let trace = ReplicaTrace(int_of_index (replica_no state), n_replicas state, state, "began recovering", "broadcast recovery message") in
   (state, [Communication(Broadcast(ReplicaMessage(Recovery(replica_no state, current_recovery_nonce state)))); 
            Timeout(ReplicaTimeout(RecoveryTimeout(valid_timeout state), int_of_index (replica_no state)))], trace)
@@ -14,8 +14,8 @@ let on_recovery state i x =
     let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "not normal status") in
     (state, [], trace)
   else
-    let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Receive_Recovery) in
-    let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Send_Recoveryresponse) in
+    let state = update_monitor state `Receive_Recovery in
+    let state = update_monitor state `Send_Recoveryresponse in
     let v = view_no state in
     let j = replica_no state in
     if is_primary state then
@@ -41,13 +41,15 @@ let on_recoveryresponse state v x opt_p j =
       (state, [], trace)
     else
       let state = log_recoveryresponse state v x opt_p j in
+      let state = update_monitor state `Receive_Recoveryresponse in
       let q = quorum state in
       let no_recoveryresponses = no_received_recoveryresponses state in
       if no_recoveryresponses >= q then
         match (primary_recoveryresponse state) with
         | Some(_, _, l, n, k, _) ->
-          let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Receive_Recoveryresponses) in
-          let state = update_monitor state (VR_Safety_Monitor.init ()) in
+          let state = update_monitor state `Receive_Primaryrecoveryresponse in
+          let state = update_monitor state `Finish_Recovering in
+          let state = reset_monitor state in
           let state = set_log state l in
           let state =  set_op_no state n in
           let state = set_status state Normal in

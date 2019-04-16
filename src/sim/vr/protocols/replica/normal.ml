@@ -11,7 +11,7 @@ let start_replica state =
 let on_request state op c s =
   let trace_event = "received request" in
   if (is_primary state && (status state) = Normal) then
-    let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Receive_Request) in
+    let state = update_monitor state `Receive_Request in
     let (cte_s, res_opt) = get_client_table_entry state c in
     if (s < cte_s) then
       (* drop request *) 
@@ -25,14 +25,14 @@ let on_request state op c s =
         (state, [], trace)
       | Some(res) -> (* return result for most recent operation *) 
         let trace = ReplicaTrace(int_of_index (replica_no state), 1, state, trace_event, "most recent request, already executed, resend reply") in
-        let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Send_Reply) in
+        let state = update_monitor state `Send_Reply in
         (state, [Communication(Unicast(ClientMessage(Reply(view_no state, s, res)), int_of_index c))], trace)
     else 
       let state = log_request state op c s in
       let broadcast_prepare = Broadcast(ReplicaMessage(Prepare(view_no state, (op, c, s), op_no state, commit_no state))) in
       let prepare_timeout = ReplicaTimeout(PrepareTimeout(valid_timeout state, op_no state), int_of_index (replica_no state)) in
       let heartbeat_timeout = ReplicaTimeout(HeartbeatTimeout(valid_timeout state, op_no state), int_of_index (replica_no state)) in
-      let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Send_Prepare) in
+      let state = update_monitor state `Send_Prepare in
       let trace = ReplicaTrace(int_of_index (replica_no state), n_replicas state, state, trace_event, "new request, broadcasting prepare") in
       (state, [Communication(broadcast_prepare); Timeout(heartbeat_timeout); Timeout(prepare_timeout)], trace)
   else
@@ -47,7 +47,7 @@ let on_prepare state v (op, c, s) n k =
   else if v > (view_no state) then
     later_view state v trace_event
   else
-    let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Receive_Prepare) in
+    let state = update_monitor state `Receive_Prepare in
     let primary_no = primary_no state in
     let state = increment_primary_comms state in
     let primary_timeout = ReplicaTimeout(PrimaryTimeout(valid_timeout state, no_primary_comms state), int_of_index (replica_no state)) in
@@ -61,7 +61,7 @@ let on_prepare state v (op, c, s) n k =
       let state = process_queued_prepares state in
       let (n_packets, events, trace_details) = 
         if (op_no state) >= n then 
-          let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Send_Prepareok) in
+          let state = update_monitor state `Send_Prepareok in
           (1, [Communication(Unicast(ReplicaMessage(PrepareOk(view_no state, op_no state, replica_no state)), int_of_index primary_no))],
            "successfully prepared, sending prepareok")
         else 
@@ -79,7 +79,7 @@ let on_prepareok state v n i =
   else if v > (view_no state) then
     later_view state v trace_event
   else
-    let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Receive_Prepareok) in
+    let state = update_monitor state `Receive_Prepareok in
     let casted_prepareok = get_casted_prepareok state i in
     if casted_prepareok >= n || (commit_no state) >= n then
       (* either already received a prepareok from this replica or already committed operation *)
@@ -92,7 +92,7 @@ let on_prepareok state v n i =
       let (state, replies) = commit state k in
       let comms = List.map replies (fun c -> Communication(c)) in
       let trace_details = if (List.length comms) > 0 then "logged prepareok, sending replies" else "logged prepareok, waiting on other replicas" in
-      let state = if (List.length comms) > 0 then update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Send_Reply) else state in
+      let state = if (List.length comms) > 0 then update_monitor state `Send_Reply else state in
       let trace = ReplicaTrace(int_of_index (replica_no state), (List.length comms), state, trace_event, trace_details) in
       (state, comms, trace)
     
@@ -104,7 +104,7 @@ let on_commit state v k =
   else if v > (view_no state) then
     later_view state v trace_event
   else
-    let state = update_monitor state (VR_Safety_Monitor.tick (safety_monitor state) `Receive_Commit) in
+    let state = update_monitor state `Receive_Commit in
     let state = increment_primary_comms state in
     let (state, _) = commit state k in
     let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "commited operations") in
