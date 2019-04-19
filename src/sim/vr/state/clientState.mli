@@ -11,6 +11,7 @@ module ClientState (StateMachine : StateMachine.StateMachine_type) : sig
     no_clientrecoveryresponses : int;
     received_clientrecoveryresponses : bool list;
     valid_timeout : int;
+    clock : float;
   }
 
   type client_message =

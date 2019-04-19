@@ -49,6 +49,9 @@ type trace =
   | ClientTrace of int * int * client_state * string * string
   | Null
 
+val replica_set_time: replica_state -> float -> replica_state
+val client_set_time: client_state -> float -> client_state
+
 val reset_monitor: replica_state -> replica_state
 val update_monitor: replica_state -> VR_Safety_Monitor.s -> replica_state
 val statecalls: replica_state -> VR_Safety_Monitor.s list

@@ -21,6 +21,9 @@ module ClientState (StateMachine : StateMachine.StateMachine_type) = struct
 
     (* increment on replies and recovery *)
     valid_timeout : int;
+
+    (* time *)
+    clock : float;
   }
 
   type client_message =
@@ -50,6 +53,8 @@ module ClientState (StateMachine : StateMachine.StateMachine_type) = struct
           received_clientrecoveryresponses = List.init n_replicas (fun _ -> false);
 
           valid_timeout = 0;
+
+          clock = 0.
         } in
         init (n_c - 1) (state::l) in
     init (n_clients - 1) []
@@ -70,6 +75,8 @@ module ClientState (StateMachine : StateMachine.StateMachine_type) = struct
       received_clientrecoveryresponses = List.init n_replicas (fun _ -> false);
 
       valid_timeout = state.valid_timeout;
+
+      clock = 0.
     }
 
   let finished_workloads clients = 

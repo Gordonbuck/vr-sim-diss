@@ -86,6 +86,8 @@ let time_for_client_timeout timeout =
   | RequestTimeout(_) -> 40.
   | ClientRecoveryTimeout(_) -> 30.
 
+let clock_skew () = 0.
+
 let fail_replica () = 
   let i = Random.int 1000 in
   if i < 1 then Some(sample_truncatednormal_boxmuller 50. 400. 50.) else None

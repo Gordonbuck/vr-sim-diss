@@ -26,6 +26,7 @@ module type Protocol_type = sig
   val index_of_replica: replica_state -> int
   val check_consistency: replica_state list -> bool
   val replica_is_recovering: replica_state -> bool
+  val replica_set_time: replica_state -> float -> replica_state
 
   val on_client_message: client_message -> client_state -> client_state * protocol_event list * trace
   val on_client_timeout: client_timeout -> client_state -> client_state * protocol_event list * trace
@@ -37,6 +38,7 @@ module type Protocol_type = sig
   val gen_workload: client_state -> int -> client_state
   val finished_workloads: client_state list -> bool
   val client_is_recovering: client_state -> bool
+  val client_set_time: client_state -> float -> client_state
 
   val string_of_trace: trace -> trace_level -> string
 
@@ -60,6 +62,7 @@ module type Parameters_type = sig
   val packet_delay: unit -> float
   val time_for_replica_timeout: replica_timeout -> float
   val time_for_client_timeout: client_timeout -> float
+  val clock_skew: unit -> float
   val fail_replica: unit -> float option
   val fail_client: unit -> float option
   val termination: termination_type
@@ -156,10 +159,10 @@ module Simulator (P : Protocol_type)
       else
         events
   and build_replica_timeout_event t i timeout =  
-    let t = T.inc t (T.span_of_float (Params.time_for_replica_timeout timeout)) in
+    let t = T.inc (T.inc t (T.span_of_float (Params.time_for_replica_timeout timeout))) (T.span_of_float (Params.clock_skew ())) in
     ReplicaEvent(t, i, replica_protocol_event t (P.on_replica_timeout timeout))
   and build_client_timeout_event t i timeout = 
-    let t = T.inc t (T.span_of_float (Params.time_for_client_timeout timeout)) in
+    let t = T.inc (T.inc t (T.span_of_float (Params.time_for_client_timeout timeout))) (T.span_of_float (Params.clock_skew ())) in
     ClientEvent(t, i, client_protocol_event t (P.on_client_timeout timeout))
 
   and timeout_to_event t timeout = 
@@ -358,7 +361,8 @@ module Simulator (P : Protocol_type)
 
       (* simulation *)
 
-  let simulate states eventlist i comp = 
+  let simulate t states eventlist i comp time_update = 
+    let states = List.map states (fun s -> {s with protocol_state = (time_update s.protocol_state (T.float_of_t t));}) in
     let state_opt = List.nth states i in
     match state_opt with
     | None -> assert(false)
@@ -383,10 +387,10 @@ module Simulator (P : Protocol_type)
         let (t, replicas, clients, eventlist) = 
           match e with
           | ReplicaEvent(t, i, comp) -> 
-            let (replicas, eventlist) = simulate replicas eventlist i comp in
+            let (replicas, eventlist) = simulate t replicas eventlist i comp P.replica_set_time in
             (t, replicas, clients, eventlist)
           | ClientEvent(t, i, comp) -> 
-            let (clients, eventlist) = simulate clients eventlist i comp in
+            let (clients, eventlist) = simulate t clients eventlist i comp P.client_set_time in
             (t, replicas, clients, eventlist) in
         let protocol_replicas = List.map replicas (fun r -> r.protocol_state) in
         if P.check_consistency protocol_replicas then

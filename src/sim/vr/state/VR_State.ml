@@ -18,6 +18,9 @@ type trace =
   | ClientTrace of int * int * client_state * string * string
   | Null
 
+let replica_set_time state t = {state with clock = t;}
+let client_set_time (state : client_state) t = {state with clock = t;}
+
 let quorum state = ((List.length state.configuration) / 2) + 1
 
 let reset_monitor state = 

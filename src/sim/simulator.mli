@@ -23,6 +23,7 @@ module type Protocol_type = sig
   val index_of_replica: replica_state -> int
   val check_consistency: replica_state list -> bool
   val replica_is_recovering: replica_state -> bool
+  val replica_set_time: replica_state -> float -> replica_state
 
   val on_client_message: client_message -> client_state -> client_state * protocol_event list * trace
   val on_client_timeout: client_timeout -> client_state -> client_state * protocol_event list * trace
@@ -33,7 +34,8 @@ module type Protocol_type = sig
   val index_of_client: client_state -> int
   val gen_workload: client_state -> int -> client_state
   val finished_workloads: client_state list -> bool
-  val client_is_recovering: client_state -> bool
+  val client_is_recovering: client_state -> bool 
+  val client_set_time: client_state -> float -> client_state
 
   val string_of_trace: trace -> trace_level -> string
 
@@ -57,6 +59,7 @@ module type Parameters_type = sig
   val packet_delay: unit -> float
   val time_for_replica_timeout: replica_timeout -> float
   val time_for_client_timeout: client_timeout -> float
+  val clock_skew: unit -> float
   val fail_replica: unit -> float option
   val fail_client: unit -> float option
   val termination: termination_type

@@ -52,7 +52,10 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) = struct
     mach : StateMachine.t;
 
     (* safety monitor *)
-    monitor : (VR_Safety_Monitor.s list * VR_Safety_Monitor.t)
+    monitor : (VR_Safety_Monitor.s list * VR_Safety_Monitor.t);
+
+    (* time *)
+    clock : float;
   }
 
   type replica_message =
@@ -115,6 +118,8 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) = struct
           mach = StateMachine.create ();
 
           monitor = ([], VR_Safety_Monitor.init ~q:(n_replicas / 2 + 1));
+
+          clock = 0.;
         } in
         init (n_r - 1) (state::l) in
     init (n_replicas - 1) []
@@ -154,6 +159,8 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) = struct
       mach = StateMachine.create ();
 
       monitor = (statecalls, VR_Safety_Monitor.init ~q:(n_replicas / 2 + 1));
+
+      clock = 0.
     }
 
   let index_of_replica state = state.replica_no
