@@ -362,7 +362,7 @@ module Simulator (P : Protocol_type)
       (* simulation *)
 
   let simulate t states eventlist i comp time_update = 
-    let states = List.map states (fun s -> {s with protocol_state = (time_update s.protocol_state (T.float_of_t t));}) in
+    let states = List.map states (fun s -> {s with protocol_state = (time_update s.protocol_state (T.float_of_t (T.inc t (T.span_of_float (Params.clock_skew ())))));}) in
     let state_opt = List.nth states i in
     match state_opt with
     | None -> assert(false)
