@@ -18,12 +18,14 @@ type trace =
   | ClientTrace of int * int * client_state * string * string
   | Null
 
+let quorum state = ((List.length state.configuration) / 2) + 1
+
 let set_lease_time state t = {state with lease_time=t;}
 let lease_time state = state.lease_time
 
 let check_leases state = 
   let n_valid = List.count state.received_leases (fun l -> l > state.clock) in
-  n_valid >= (List.length state.configuration) / 2
+  n_valid >= (quorum state) - 1
 
 let update_lease state i l = 
   let received_leases = List.mapi state.received_leases (fun j l2 -> if i = j && l > l2 then l else l2) in
@@ -42,8 +44,6 @@ let upcall state op =
 
 let replica_set_time state t = {state with clock = t;}
 let client_set_time (state : client_state) t = {state with clock = t;}
-
-let quorum state = ((List.length state.configuration) / 2) + 1
 
 let reset_monitor state = 
   let (statecalls, _) = state.monitor in
