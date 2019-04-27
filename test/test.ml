@@ -30,7 +30,7 @@ let index_of_client_tests =
            assert_equal res (VR_State.index_of_client arg))))
 
 let index_of_replica_tests = 
-  let replicas = VR_State.init_replicas 10 3 in
+  let replicas = VR_State.init_replicas_with_lease_time 10 3 0. in
   "index_of_replica_tests">:::
   (List.map
      [(List.nth_exn replicas 0, 0);
@@ -45,11 +45,11 @@ let index_of_replica_tests =
            assert_equal res (VR_State.index_of_replica arg))))
 
 let n_replicas_tests = 
-  let replicas = VR_State.init_replicas 10 3 in
+  let replicas = VR_State.init_replicas_with_lease_time 10 3 0. in
   let replica_1 = List.nth_exn replicas 1 in
-  let replicas = VR_State.init_replicas 7 3 in
+  let replicas = VR_State.init_replicas_with_lease_time 7 3 0. in
   let replica_2 = List.nth_exn replicas 2 in
-  let replicas = VR_State.init_replicas 1 3 in
+  let replicas = VR_State.init_replicas_with_lease_time 1 3 0. in
   let replica_0 = List.nth_exn replicas 0 in
   "n_replicas_tests">:::
   (List.map

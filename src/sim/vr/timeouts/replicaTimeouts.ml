@@ -79,3 +79,9 @@ let on_getstate_timeout state v n =
              Timeout(ReplicaTimeout(GetStateTimeout(valid_timeout state, op_no state), int_of_index (replica_no state)))], trace)
   else
     (state, [], Null)
+
+let on_expired_lease state v _ = 
+  if (valid_timeout state) = v then
+    notice_viewchange state "lease expired"
+  else
+    (state, [], Null)

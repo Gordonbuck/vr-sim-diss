@@ -6,3 +6,4 @@ val on_startviewchange_timeout : VR_State.replica_state -> int -> (VR_State.repl
 val on_doviewchange_timeout : VR_State.replica_state -> int -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)
 val on_recovery_timeout : VR_State.replica_state -> int -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)
 val on_getstate_timeout : VR_State.replica_state -> int -> VR_State.index -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)
+val on_expired_lease : VR_State.replica_state -> int -> float -> (VR_State.replica_state * VR_State.protocol_event list * VR_State.trace)

@@ -39,6 +39,42 @@ let on_request state op c s =
     let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "not primary / normal status") in
     (state, [], trace)
 
+let fr_on_request state op c s =
+  let trace_event = "received request" in
+  if (is_primary state && (status state) = Normal) then
+    let state = update_monitor state `Receive_Request in
+    let (cte_s, res_opt) = get_client_table_entry state c in
+    if (s < cte_s) then
+      (* drop request *) 
+      let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "request number less than most recent") in
+      (state, [], trace)
+    else if (s = cte_s) then
+      (* request already being/been executed, try to return result *)
+      match res_opt with
+      | None -> (* no result to return *) 
+        let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "most recent request, not yet executed") in
+        (state, [], trace)
+      | Some(res) -> (* return result for most recent operation *) 
+        let trace = ReplicaTrace(int_of_index (replica_no state), 1, state, trace_event, "most recent request, already executed, resend reply") in
+        let state = update_monitor state `Send_Reply in
+        (state, [Communication(Unicast(ClientMessage(Reply(view_no state, s, res)), int_of_index c))], trace)
+    else 
+      if (StateMachine.is_idempotent op) && (check_leases state) then
+        let (state, res) = upcall state op in
+        let trace = ReplicaTrace(int_of_index (replica_no state), 1, state, trace_event, "idempotent operation and hold valid leases, send reply") in
+        (state, [Communication(Unicast(ClientMessage(Reply(view_no state, s, res)), int_of_index c))], trace)
+      else
+        let state = log_request state op c s in
+        let broadcast_prepare = Broadcast(ReplicaMessage(Prepare(view_no state, (op, c, s), op_no state, commit_no state))) in
+        let prepare_timeout = ReplicaTimeout(PrepareTimeout(valid_timeout state, op_no state), int_of_index (replica_no state)) in
+        let heartbeat_timeout = ReplicaTimeout(HeartbeatTimeout(valid_timeout state, op_no state), int_of_index (replica_no state)) in
+        let state = update_monitor state `Send_Prepare in
+        let trace = ReplicaTrace(int_of_index (replica_no state), n_replicas state, state, trace_event, "new request, broadcasting prepare") in
+        (state, [Communication(broadcast_prepare); Timeout(heartbeat_timeout); Timeout(prepare_timeout)], trace)
+  else
+    let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "not primary / normal status") in
+    (state, [], trace)
+
 let on_prepare state v (op, c, s) n k = 
   let trace_event = "received prepare" in
   if (status state) <> Normal || v < (view_no state) then
@@ -54,7 +90,8 @@ let on_prepare state v (op, c, s) n k =
     if (op_no state) >= n then
       (* already prepared request so re-send prepareok *)
       let trace = ReplicaTrace(int_of_index (replica_no state), 1, state, trace_event, "already prepared, resend prepareok") in
-      let communication = Unicast(ReplicaMessage(PrepareOk(view_no state, op_no state, replica_no state)), int_of_index primary_no) in
+      let state = update_last_sent_lease state (replica_current_time state +. lease_time state) in
+      let communication = Unicast(ReplicaMessage(PrepareOk(view_no state, op_no state, replica_no state, replica_current_time state +. lease_time state)), int_of_index primary_no) in
       (state, [Communication(communication); Timeout(primary_timeout)], trace)
     else
       let state = queue_prepare state n (op, c, s) in
@@ -62,7 +99,8 @@ let on_prepare state v (op, c, s) n k =
       let (n_packets, events, trace_details) = 
         if (op_no state) >= n then 
           let state = update_monitor state `Send_Prepareok in
-          (1, [Communication(Unicast(ReplicaMessage(PrepareOk(view_no state, op_no state, replica_no state)), int_of_index primary_no))],
+          let state = update_last_sent_lease state (replica_current_time state +. lease_time state) in
+          (1, [Communication(Unicast(ReplicaMessage(PrepareOk(view_no state, op_no state, replica_no state, replica_current_time state +. lease_time state)), int_of_index primary_no))],
            "successfully prepared, sending prepareok")
         else 
           (0, [Timeout(ReplicaTimeout(StateTransferTimeout(valid_timeout state, op_no state), int_of_index (replica_no state)))],
@@ -71,7 +109,7 @@ let on_prepare state v (op, c, s) n k =
       let trace = ReplicaTrace(int_of_index (replica_no state), n_packets, state, trace_event, trace_details) in
       (state, Timeout(primary_timeout)::events, trace)
 
-let on_prepareok state v n i = 
+let on_prepareok state v n i l = 
   let trace_event = "received prepareok" in
   if (status state) <> Normal || v < (view_no state) then
     let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "not normal status / old view number") in
@@ -80,6 +118,7 @@ let on_prepareok state v n i =
     later_view state v trace_event
   else
     let state = update_monitor state `Receive_Prepareok in
+    let state = update_lease state i l in
     let casted_prepareok = get_casted_prepareok state i in
     if casted_prepareok >= n || (commit_no state) >= n then
       (* either already received a prepareok from this replica or already committed operation *)
@@ -95,7 +134,7 @@ let on_prepareok state v n i =
       let state = if (List.length comms) > 0 then update_monitor state `Send_Reply else state in
       let trace = ReplicaTrace(int_of_index (replica_no state), (List.length comms), state, trace_event, trace_details) in
       (state, comms, trace)
-    
+
 let on_commit state v k = 
   let trace_event = "received commit" in
   if (status state) <> Normal || v < (view_no state) then

@@ -8,6 +8,7 @@ module type StateMachine_type = sig
   val apply_op: t -> operation -> t
   val last_res: t -> result
   val gen_ops: int -> operation list
+  val is_idempotent: operation -> bool
 end
 
 module KeyValueStore : StateMachine_type = struct
@@ -58,5 +59,10 @@ module KeyValueStore : StateMachine_type = struct
           let value = gen_string () in
           gen (i - 1) (Put(key, value)::l) in
     gen (n - 1) []
+
+  let is_idempotent op = 
+    match op with
+    | Put(_,_) -> false
+    | Get(_) -> true
 
 end

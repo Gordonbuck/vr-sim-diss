@@ -10,7 +10,7 @@ type replica_state
 type replica_message =
   | Request of StateMachine.operation * index * index
   | Prepare of index * (StateMachine.operation * index * index) * index * index
-  | PrepareOk of index * index * index
+  | PrepareOk of index * index * index * float
   | Commit of index * index
   | StartViewChange of index * index
   | DoViewChange of index * (StateMachine.operation * index * index) list * index * index * index * index
@@ -29,6 +29,7 @@ type replica_timeout =
   | DoViewChangeTimeout of int
   | RecoveryTimeout of int
   | GetStateTimeout of int * index
+  | LeaseExpired of int * float
 
 type client_state
 type client_message =
@@ -49,6 +50,16 @@ type trace =
   | ClientTrace of int * int * client_state * string * string
   | Null
 
+val set_lease_time: replica_state -> float -> replica_state
+val lease_time: replica_state -> float
+val check_leases: replica_state -> bool
+val update_lease: replica_state -> index -> float -> replica_state
+val last_sent_lease: replica_state -> float
+val update_last_sent_lease: replica_state -> float -> replica_state
+val replica_current_time: replica_state -> float
+
+val upcall: replica_state -> StateMachine.operation -> replica_state * StateMachine.result
+
 val replica_set_time: replica_state -> float -> replica_state
 val client_set_time: client_state -> float -> client_state
 
@@ -63,7 +74,7 @@ val init_clients: int -> int -> client_state list
 val crash_client: client_state -> client_state
 val index_of_client: client_state -> int
 
-val init_replicas: int -> int -> replica_state list
+val init_replicas_with_lease_time: int -> int -> float -> replica_state list
 val crash_replica: replica_state -> replica_state
 val index_of_replica: replica_state -> int
 

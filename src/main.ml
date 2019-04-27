@@ -1,6 +1,7 @@
 open Core
 open Simulator
 open VR_Params
+open VR
 
 let conf = {
   n_replicas = 11;
@@ -32,10 +33,12 @@ let conf = {
 
 module MyParams = (val (build_params conf) : Params)
 
+module MyVR = (val (build_protocol (FastReads(40.))) : Protocol)
+
 let sim_runs () = 
   let params_n = 1 in
   let n_iterations = 100 in
-  let module VR_Sim = Simulator(VR)(MyParams) in
+  let module VR_Sim = Simulator(MyVR)(MyParams) in
   let rec run i =
     if i = n_iterations then ()
     else
@@ -47,7 +50,7 @@ let sim_runs () =
   run 0
 
 let main () =
-  let module VR_Sim = Simulator(VR)(MyParams) in
+  let module VR_Sim = Simulator(MyVR)(MyParams) in
   VR_Sim.run ()
 
 let () = main ()

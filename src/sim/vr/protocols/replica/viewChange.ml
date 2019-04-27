@@ -2,13 +2,17 @@ open Core
 open VR_State
 
 let notice_viewchange state trace_event = 
-  let state = if status state <> ViewChange then reset_monitor state else state in
-  let state = update_monitor state `Send_Startviewchange in
-  let state = set_status state ViewChange in
-  let state = increment_view_no state in
-  let trace = ReplicaTrace(int_of_index (replica_no state), n_replicas state, state, trace_event, "broadcasting start view change") in
-  (state, [Communication(Broadcast(ReplicaMessage(StartViewChange(view_no state, replica_no state))));
-           Timeout(ReplicaTimeout(StartViewChangeTimeout(valid_timeout state), int_of_index (replica_no state)))], trace)
+  if (replica_current_time state) < (last_sent_lease state) then 
+    let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "lease not yet expired, waiting") in
+    (state, [Timeout(ReplicaTimeout(LeaseExpired(valid_timeout state, (last_sent_lease state) -. (replica_current_time state)), int_of_index (replica_no state)))], trace)
+  else
+    let state = if status state <> ViewChange then reset_monitor state else state in
+    let state = update_monitor state `Send_Startviewchange in
+    let state = set_status state ViewChange in
+    let state = increment_view_no state in
+    let trace = ReplicaTrace(int_of_index (replica_no state), n_replicas state, state, trace_event, "broadcasting start view change") in
+    (state, [Communication(Broadcast(ReplicaMessage(StartViewChange(view_no state, replica_no state))));
+             Timeout(ReplicaTimeout(StartViewChangeTimeout(valid_timeout state), int_of_index (replica_no state)))], trace)
 
 let on_startviewchange state v i =
   let trace_event = "start view change received" in
@@ -98,11 +102,15 @@ let on_startview state v l n k =
     let (state, _) = commit state k in
     let (n_packets, events, trace_details) = 
       if ((commit_no state) < (op_no state)) then
-        (1, [Communication(Unicast(ReplicaMessage(PrepareOk(view_no state, op_no state, replica_no state)), int_of_index (primary_no state)))],
+        (1, [Communication(Unicast(ReplicaMessage(PrepareOk(view_no state, op_no state, replica_no state, replica_current_time state +. lease_time state)), int_of_index (primary_no state)))],
          "started view, sending prepareok for noncommitted operations")
       else
         (0, [], "started view") in
-    let state = if ((commit_no state) < (op_no state)) then update_monitor state `Send_Prepareok else state in
+    let state = 
+      if ((commit_no state) < (op_no state)) then 
+        let state = update_last_sent_lease state (replica_current_time state +. lease_time state) in
+        update_monitor state `Send_Prepareok 
+      else state in
     let state = reset_monitor state in
     let trace = ReplicaTrace(int_of_index (replica_no state), n_packets, state, trace_event, trace_details) in
     (state, Timeout(ReplicaTimeout(PrimaryTimeout(valid_timeout state, no_primary_comms state), int_of_index (replica_no state)))::events, trace)

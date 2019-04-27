@@ -30,13 +30,16 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) : sig
     no_primary_comms : int;
     mach : StateMachine.t;
     monitor : VR_Safety_Monitor.s list * VR_Safety_Monitor.t;
-    clock: float
+    clock: float;
+    received_leases: float list;
+    sent_lease : float;
+    lease_time : float;
   }
 
   type replica_message =
     | Request of StateMachine.operation * int * int
     | Prepare of int * (StateMachine.operation * int * int) * int * int
-    | PrepareOk of int * int * int
+    | PrepareOk of int * int * int * float
     | Commit of int * int
     | StartViewChange of int * int
     | DoViewChange of int * (StateMachine.operation * int * int) list * int * int * int * int
@@ -56,8 +59,9 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) : sig
     | DoViewChangeTimeout of int
     | RecoveryTimeout of int
     | GetStateTimeout of int * int
+    | LeaseExpired of int * float
 
-  val init_replicas: int -> int -> replica_state list
+  val init_replicas_with_lease_time: int -> int -> float -> replica_state list
   val crash_replica: replica_state -> replica_state
   val index_of_replica: replica_state -> int
 

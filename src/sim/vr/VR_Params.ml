@@ -152,6 +152,7 @@ let build_params (conf : config) = (module struct
     | DoViewChangeTimeout(_) -> conf.doviewchange_timeout
     | RecoveryTimeout(_) -> conf.recovery_timeout
     | GetStateTimeout(_, _) -> conf.getstate_timeout
+    | LeaseExpired(_, l) -> l
 
   let time_for_client_timeout timeout = 
     match timeout with

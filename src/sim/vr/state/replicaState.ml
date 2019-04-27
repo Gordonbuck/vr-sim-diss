@@ -56,12 +56,19 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) = struct
 
     (* time *)
     clock : float;
+
+    (* timestamped leases from other replicas *)
+    received_leases : float list;
+    (* last lease sent to primary *)
+    sent_lease : float;
+    (* how long leases should last *)
+    lease_time : float;
   }
 
   type replica_message =
     | Request of StateMachine.operation * int * int
     | Prepare of int * (StateMachine.operation * int * int) * int * int
-    | PrepareOk of int * int * int
+    | PrepareOk of int * int * int * float
     | Commit of int * int
     | StartViewChange of int * int
     | DoViewChange of int * (StateMachine.operation * int * int) list * int * int * int * int
@@ -81,8 +88,9 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) = struct
     | DoViewChangeTimeout of int
     | RecoveryTimeout of int
     | GetStateTimeout of int * int
+    | LeaseExpired of int * float
 
-  let init_replicas n_replicas n_clients = 
+  let init_replicas_with_lease_time n_replicas n_clients lease_time = 
     let rec init n_r l =
       if n_r < 0 then
         l
@@ -120,6 +128,10 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) = struct
           monitor = ([], VR_Safety_Monitor.init ~q:(n_replicas / 2 + 1));
 
           clock = 0.;
+
+          received_leases = List.init n_replicas (fun _ -> -1.);
+          sent_lease = -1.;
+          lease_time = lease_time;
         } in
         init (n_r - 1) (state::l) in
     init (n_replicas - 1) []
@@ -160,7 +172,11 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) = struct
 
       monitor = (statecalls, VR_Safety_Monitor.init ~q:(n_replicas / 2 + 1));
 
-      clock = 0.
+      clock = 0.;
+
+      received_leases = List.init n_replicas (fun _ -> -1.);
+      sent_lease = -1.;
+      lease_time = state.lease_time;
     }
 
   let index_of_replica state = state.replica_no

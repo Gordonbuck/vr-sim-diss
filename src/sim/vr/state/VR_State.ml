@@ -18,6 +18,28 @@ type trace =
   | ClientTrace of int * int * client_state * string * string
   | Null
 
+let set_lease_time state t = {state with lease_time=t;}
+let lease_time state = state.lease_time
+
+let check_leases state = 
+  let n_valid = List.count state.received_leases (fun l -> l > state.clock) in
+  n_valid >= (List.length state.configuration) / 2
+
+let update_lease state i l = 
+  let received_leases = List.mapi state.received_leases (fun j l2 -> if i = j && l > l2 then l else l2) in
+  {state with received_leases = received_leases;}
+
+let last_sent_lease state = state.sent_lease
+
+let update_last_sent_lease state l = {state with sent_lease = l;}
+
+let replica_current_time state = state.clock
+
+let upcall state op = 
+  let mach = StateMachine.apply_op state.mach op in
+  let res = StateMachine.last_res mach in
+  ({state with mach = mach;}, res)
+
 let replica_set_time state t = {state with clock = t;}
 let client_set_time (state : client_state) t = {state with clock = t;}
 
