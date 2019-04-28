@@ -96,11 +96,11 @@ let on_prepare state v (op, c, s) n k =
     else
       let state = queue_prepare state n (op, c, s) in
       let state = process_queued_prepares state in
-      let (n_packets, events, trace_details) = 
+      let (state, n_packets, events, trace_details) = 
         if (op_no state) >= n then 
           let state = update_monitor state `Send_Prepareok in
           let state = update_last_sent_lease state (replica_current_time state +. lease_time state) in
-          (1, [Communication(Unicast(ReplicaMessage(PrepareOk(view_no state, op_no state, replica_no state, replica_current_time state +. lease_time state)), int_of_index primary_no))],
+          (state, 1, [Communication(Unicast(ReplicaMessage(PrepareOk(view_no state, op_no state, replica_no state, replica_current_time state +. lease_time state)), int_of_index primary_no))],
            "successfully prepared, sending prepareok")
         else 
           (0, [Timeout(ReplicaTimeout(StateTransferTimeout(valid_timeout state, op_no state), int_of_index (replica_no state)))],
