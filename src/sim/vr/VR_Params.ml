@@ -81,8 +81,10 @@ type config = {
   request_timeout : float;
   clientrecovery_timeout : float;
   clock_skew : continuous_distribution;
-  replica_failure : discrete_distribution * continuous_distribution;
-  client_failure : discrete_distribution * continuous_distribution;
+  replica_failure_period : float;
+  replica_failure : discrete_distribution * continuous_distribution * continuous_distribution;
+  client_failure_period : float;
+  client_failure : discrete_distribution * continuous_distribution * continuous_distribution;
   termination : termination_type;
   trace_level : trace_level;
   show_trace : bool;
@@ -121,8 +123,10 @@ module type Params = sig
   val time_for_replica_timeout: replica_timeout -> float
   val time_for_client_timeout: client_timeout -> float
   val clock_skew: unit -> float
-  val fail_replica: unit -> float option
-  val fail_client: unit -> float option
+  val replica_failure_period: float
+  val fail_replica: unit -> (float * float) option
+  val client_failure_period: float
+  val fail_client: unit -> (float * float) option
   val termination: termination_type
   val trace_level: trace_level
   val show_trace: bool
@@ -162,12 +166,19 @@ let build_params (conf : config) = (module struct
   let clock_skew = func_of_cont_dist conf.clock_skew
 
   let fail_replica () = 
-    let (disc, cont) = conf.replica_failure in
-    if (func_of_disc_dist disc) () then Some((func_of_cont_dist cont) ()) else None
+    let (should_fail_dist, fail_time_dist, recover_time_dist) = conf.replica_failure in
+    if (func_of_disc_dist should_fail_dist) () then 
+      Some((func_of_cont_dist fail_time_dist) (), (func_of_cont_dist recover_time_dist) ()) 
+    else None
 
   let fail_client () = 
-    let (disc, cont) = conf.client_failure in
-    if (func_of_disc_dist disc) () then Some((func_of_cont_dist cont) ()) else None
+    let (should_fail_dist, fail_time_dist, recover_time_dist) = conf.client_failure in
+    if (func_of_disc_dist should_fail_dist) () then 
+      Some((func_of_cont_dist fail_time_dist) (), (func_of_cont_dist recover_time_dist) ()) 
+    else None
+
+  let replica_failure_period = conf.replica_failure_period
+  let client_failure_period = conf.client_failure_period
 
   let termination = 
     match conf.termination with

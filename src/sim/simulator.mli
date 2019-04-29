@@ -60,8 +60,10 @@ module type Parameters_type = sig
   val time_for_replica_timeout: replica_timeout -> float
   val time_for_client_timeout: client_timeout -> float
   val clock_skew: unit -> float
-  val fail_replica: unit -> float option
-  val fail_client: unit -> float option
+  val replica_failure_period: float
+  val fail_replica: unit -> (float * float) option
+  val client_failure_period: float
+  val fail_client: unit -> (float * float) option
   val termination: termination_type
   val trace_level: trace_level
   val show_trace: bool

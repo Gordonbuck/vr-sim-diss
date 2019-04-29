@@ -103,7 +103,7 @@ let on_prepare state v (op, c, s) n k =
           (state, 1, [Communication(Unicast(ReplicaMessage(PrepareOk(view_no state, op_no state, replica_no state, replica_current_time state +. lease_time state)), int_of_index primary_no))],
            "successfully prepared, sending prepareok")
         else 
-          (0, [Timeout(ReplicaTimeout(StateTransferTimeout(valid_timeout state, op_no state), int_of_index (replica_no state)))],
+          (state, 0, [Timeout(ReplicaTimeout(StateTransferTimeout(valid_timeout state, op_no state), int_of_index (replica_no state)))],
           "waiting on earlier prepares") in
       let (state, _) = commit state k in
       let trace = ReplicaTrace(int_of_index (replica_no state), n_packets, state, trace_event, trace_details) in

@@ -63,8 +63,10 @@ module type Parameters_type = sig
   val time_for_replica_timeout: replica_timeout -> float
   val time_for_client_timeout: client_timeout -> float
   val clock_skew: unit -> float
-  val fail_replica: unit -> float option
-  val fail_client: unit -> float option
+  val replica_failure_period: float
+  val fail_replica: unit -> (float * float) option
+  val client_failure_period: float
+  val fail_client: unit -> (float * float) option
   val termination: termination_type
   val trace_level: trace_level
   val show_trace: bool
@@ -87,11 +89,13 @@ module Simulator (P : Protocol_type)
   type event = 
     | ReplicaEvent of T.t * int * (replica_state -> replica_state * event list)
     | ClientEvent of T.t * int * (client_state -> client_state * event list)
+    | SystemEvent of T.t * (replica_state list -> client_state list -> event list)
 
   let time_of_event e = 
     match e with
     | ReplicaEvent(t, _, _)
-    | ClientEvent(t, _, _) -> t
+    | ClientEvent(t, _, _)
+    | SystemEvent(t, _) -> t
 
   let compare_events e1 e2 = T.compare (time_of_event e1) (time_of_event e2)
 
@@ -229,19 +233,19 @@ module Simulator (P : Protocol_type)
 
         (* crash events *)
 
-  let crash_replica t state = 
+  let fail_replica t state = 
     let protocol_state = P.crash_replica state.protocol_state in
     (if Params.show_trace then
       (Printf.printf "time %f; crashing replica %i\n" (T.float_of_t t) (P.index_of_replica state.protocol_state))
     else ());
-    {alive = false; protocol_state = protocol_state;}
+    ({alive = false; protocol_state = protocol_state;}, [])
 
-  let crash_client t state = 
+  let fail_client t state = 
     let protocol_state = P.crash_client state.protocol_state in
     (if Params.show_trace then
        (Printf.printf "time %f; crashing client %i\n" (T.float_of_t t) (P.index_of_client state.protocol_state))
     else ());
-    {alive = false; protocol_state = protocol_state;}
+    ({alive = false; protocol_state = protocol_state;}, [])
 
   let recover_replica t state = 
     let (protocol_state, pevents, trace) = P.recover_replica state.protocol_state in
@@ -270,47 +274,47 @@ module Simulator (P : Protocol_type)
       | (s::states) -> n_dead states (if s.alive && not (is_recovering s.protocol_state) then n else n+1) in
     n_dead states 0
 
-  let compute_replica_crashes t replicas = 
-    let rec fail replicas rev_replicas events i = 
+  let rec compute_replica_crashes t replicas _ = 
+    let rec fail replicas rev_replicas events i n_failed = 
       match replicas with
-      | [] -> (rev_replicas, events)
+      | [] -> events
       | r::replicas ->
-        let states = (List.rev (r::replicas))@rev_replicas in
-        if n_dead P.replica_is_recovering states >= Params.max_replica_failures then (states, events)
+        if n_failed + (n_dead P.replica_is_recovering ((r::replicas)@rev_replicas)) >= Params.max_replica_failures then events
         else
-          let (r, events) = 
+          let (n_failed, events) = 
             if r.alive then
               match (Params.fail_replica ()) with
-              | None -> (r, events) 
-              | Some(t_float) -> 
-                let t_event = T.inc t (T.span_of_float t_float) in
-                (crash_replica t_event r, (ReplicaEvent(t_event, i, recover_replica t_event)::events))
+              | None -> (n_failed, events)
+              | Some(t_fail, t_recover) -> 
+                let t_fail = T.inc t (T.span_of_float t_fail) in
+                let t_recover = T.inc t_fail (T.span_of_float t_recover) in
+                (n_failed+1, (ReplicaEvent(t_fail, i, fail_replica t_fail))::(ReplicaEvent(t_recover, i, recover_replica t_recover))::events)
             else 
-              (r, events) in
-          fail replicas (r::rev_replicas) events (i+1) in
-    let (rev_replicas, events) = fail replicas ([]) ([]) 0 in
-    (List.rev rev_replicas, events)
+              (n_failed, events) in
+          fail replicas (r::rev_replicas) events (i+1) n_failed in
+    let t_next = T.inc t (T.span_of_float Params.replica_failure_period) in
+    SystemEvent(t_next, compute_replica_crashes t_next)::(fail replicas ([]) ([]) 0 0)
 
-  let compute_client_crashes t clients = 
-    let rec fail clients rev_clients events i = 
-      match clients with
-      | [] -> (rev_clients, events)
-      | c::clients ->
-        let states = (List.rev (c::clients))@rev_clients in
-        if n_dead P.client_is_recovering states >= Params.max_client_failures then (states, events)
-        else
-          let (c, events) = 
-            if c.alive then
-              match (Params.fail_client ()) with
-              | None -> (c, events) 
-              | Some(t_float) -> 
-                let t_event = T.inc t (T.span_of_float t_float) in
-                (crash_client t_event c, (ClientEvent(t_event, i, recover_client t_event)::events))
-            else
-              (c, events) in
-          fail clients (c::rev_clients) events (i+1) in
-    let (rev_clients, events) = fail clients ([]) ([]) 0 in
-    (List.rev rev_clients, events)
+    let rec compute_client_crashes t _ clients = 
+      let rec fail clients rev_clients events i n_failed = 
+        match clients with
+        | [] -> events
+        | c::clients ->
+          if n_failed + (n_dead P.client_is_recovering ((c::clients)@rev_clients)) >= Params.max_client_failures then events
+          else
+            let (n_failed, events) = 
+              if c.alive then
+                match (Params.fail_client ()) with
+                | None -> (n_failed, events)
+                | Some(t_fail, t_recover) -> 
+                  let t_fail = T.inc t (T.span_of_float t_fail) in
+                  let t_recover = T.inc t_fail (T.span_of_float t_recover) in
+                  (n_failed+1, (ClientEvent(t_fail, i, fail_client t_fail))::(ClientEvent(t_recover, i, recover_client t_recover))::events)
+              else 
+                (n_failed, events) in
+            fail clients (c::rev_clients) events (i+1) n_failed in
+      let t_next = T.inc t (T.span_of_float Params.client_failure_period) in
+      SystemEvent(t_next, compute_client_crashes t_next)::(fail clients ([]) ([]) 0 0)
 
       (* initalization *)
 
@@ -341,13 +345,15 @@ module Simulator (P : Protocol_type)
     let (states, events_l) = List.unzip (List.map states (fun state -> 
         let (protocol_state, pevents, trace) = P.start_client state.protocol_state in
         let inds = client_broadcast_indices state in
-        let  msg_times = client_message_times state in
+        let msg_times = client_message_times state in
         let events = protocol_events_to_events t pevents inds msg_times in
         print_trace t trace;
         ({state with protocol_state = protocol_state;}, events)
       )) in
     let events = List.fold events_l ~init:[] ~f:List.append in
     (states, events)
+
+  let initial_system_events t _ _ = [SystemEvent(t, compute_replica_crashes t);SystemEvent(t, compute_client_crashes t)]
 
       (* termination *)
 
@@ -380,10 +386,6 @@ module Simulator (P : Protocol_type)
       if should_terminate replicas clients e then
         Printf.printf "Work completed, terminating\n"
       else
-        let (replicas, events) = compute_replica_crashes t replicas in
-        let eventlist = EL.add_multi eventlist events in
-        let (clients, events) = compute_client_crashes t clients in
-        let eventlist = EL.add_multi eventlist events in
         let (t, replicas, clients, eventlist) = 
           match e with
           | ReplicaEvent(t, i, comp) -> 
@@ -391,6 +393,9 @@ module Simulator (P : Protocol_type)
             (t, replicas, clients, eventlist)
           | ClientEvent(t, i, comp) -> 
             let (clients, eventlist) = simulate t clients eventlist i comp P.client_set_time in
+            (t, replicas, clients, eventlist) 
+          | SystemEvent(t, comp) ->
+            let eventlist = EL.add_multi eventlist (comp replicas clients) in
             (t, replicas, clients, eventlist) in
         let protocol_replicas = List.map replicas (fun r -> r.protocol_state) in
         if P.check_consistency protocol_replicas then
@@ -406,7 +411,8 @@ module Simulator (P : Protocol_type)
         let clients = gen_clients Params.n_replicas Params.n_clients Params.workloads in
         let (replicas, replica_events) = initial_replica_events (T.t_of_float 0.) replicas in
         let (clients, client_events) = initial_client_events (T.t_of_float 0.) clients in
-        let eventlist = EL.add_multi (EL.add_multi (EL.create compare_events) replica_events) client_events in
+        let system_events = initial_system_events (T.t_of_float 0.) replicas clients in
+        let eventlist = EL.add_multi (EL.add_multi (EL.add_multi (EL.create compare_events) replica_events) client_events) system_events in
         sim_loop (T.t_of_float 0.) replicas clients eventlist;
         Printf.printf "%!";
         inner (i + 1) in
