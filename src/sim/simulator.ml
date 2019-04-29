@@ -367,8 +367,7 @@ module Simulator (P : Protocol_type)
 
       (* simulation *)
 
-  let simulate t states eventlist i comp time_update = 
-    let states = List.map states (fun s -> {s with protocol_state = (time_update s.protocol_state (T.float_of_t (T.inc t (T.span_of_float (Params.clock_skew ())))));}) in
+  let simulate states eventlist i comp = 
     let state_opt = List.nth states i in
     match state_opt with
     | None -> assert(false)
@@ -378,6 +377,11 @@ module Simulator (P : Protocol_type)
       let eventlist = EL.add_multi eventlist events in
       (states, eventlist)
 
+  let time_update t states update = 
+    let states = List.map states (fun s -> 
+        {s with protocol_state = (update s.protocol_state (T.float_of_t (T.inc t (T.span_of_float (Params.clock_skew ())))));}) in
+    states
+
   let rec sim_loop t replicas clients eventlist = 
     let event_opt = EL.pop eventlist in
     match event_opt with
@@ -386,13 +390,15 @@ module Simulator (P : Protocol_type)
       if should_terminate replicas clients e then
         Printf.printf "Work completed, terminating\n"
       else
+        let (replicas, clients) = (time_update (time_of_event e) replicas P.replica_set_time, 
+                                   time_update (time_of_event e) clients P.client_set_time) in
         let (t, replicas, clients, eventlist) = 
           match e with
           | ReplicaEvent(t, i, comp) -> 
-            let (replicas, eventlist) = simulate t replicas eventlist i comp P.replica_set_time in
+            let (replicas, eventlist) = simulate replicas eventlist i comp in
             (t, replicas, clients, eventlist)
           | ClientEvent(t, i, comp) -> 
-            let (clients, eventlist) = simulate t clients eventlist i comp P.client_set_time in
+            let (clients, eventlist) = simulate clients eventlist i comp in
             (t, replicas, clients, eventlist) 
           | SystemEvent(t, comp) ->
             let eventlist = EL.add_multi eventlist (comp replicas clients) in
