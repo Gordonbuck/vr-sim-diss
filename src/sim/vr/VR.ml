@@ -43,7 +43,12 @@ module type Protocol = sig
   val string_of_trace: trace -> trace_level -> string
 end
 
-let build_protocol ver = (module struct 
+let build_protocol ver = 
+  (match ver with
+  | Base -> ()
+  | FastReads(lease_time) -> assert(lease_time >= 0.));
+  
+  (module struct 
   include VR_State
   include ClientNormal
   include ClientRecovery
