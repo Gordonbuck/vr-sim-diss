@@ -55,4 +55,10 @@ let main () =
   let module VR_Sim = Simulator(MyVR)(MyParams) in
   VR_Sim.run ()
 
-let () = main ()
+let using_parser () = 
+  let module MyParams = (val (build_params Parser.conf) : Params) in
+  let module MyVR = (val (build_protocol Parser.version) : Protocol) in
+  let module VR_Sim = Simulator(MyVR)(MyParams) in
+  VR_Sim.run ()
+
+let () = using_parser ()

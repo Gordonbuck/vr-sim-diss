@@ -9,7 +9,7 @@ type discrete_distribution =
   | GilbertElliott of float * float * float * float
 
 type termination_type = Timelimit of float | WorkCompletion
-type trace_level = VR_State.trace_level
+type trace_level = High | Medium | Low
 
 type config = {
   n_replicas : int;

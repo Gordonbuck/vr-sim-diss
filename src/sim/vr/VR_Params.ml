@@ -58,7 +58,7 @@ type discrete_distribution =
 
 type termination_type = Timelimit of float | WorkCompletion
 
-type trace_level = VR_State.trace_level
+type trace_level = High | Medium | Low
 
 type config = {
   n_replicas : int;
@@ -185,7 +185,12 @@ let build_params (conf : config) = (module struct
     | Timelimit(f) -> Timelimit(f)
     | WorkCompletion -> WorkCompletion
 
-  let trace_level = conf.trace_level
+  let trace_level = 
+    match conf.trace_level with
+    | High -> High
+    | Medium -> Medium
+    | Low -> Low
+
   let show_trace = conf.show_trace
 
 end : Params)

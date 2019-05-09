@@ -1,0 +1,70 @@
+{
+  "version": {
+    "optimisation": "fast_reads",
+    "params": 80.0
+  },
+  "n_replicas": 11,
+  "n_clients": 3,
+  "max_replica_failures": 5,
+  "max_client_failures": 1,
+  "n_iterations": 1,
+  "workloads": [10,15,20],
+  "packet_loss": {
+    "distribution": "bernoulli",
+    "params": 0.01
+  },
+  "packet_duplication": {
+    "distribution": "bernoulli",
+    "params": 0.01
+  },
+  "packet_delay": {
+    "distribution": "truncated_normal",
+    "params": [30.0,6.0,15.0]
+  },
+  "heartbeat_timeout": 20.0,
+  "prepare_timeout": 40.0,
+  "primary_timeout": 120.0,
+  "statetransfer_timeout": 50.0,
+  "startviewchange_timeout": 40.0,
+  "doviewchange_timeout": 40.0,
+  "recovery_timeout": 40.0,
+  "getstate_timeout": 40.0,
+  "request_timeout": 40.0,
+  "clientrecovery_timeout": 40.0,
+  "clock_skew": {
+    "distribution": "constant",
+    "params": 0.0
+  },
+  "replica_failure": {
+    "period": 1000.0,
+    "distribution": "bernoulli",
+    "params": 0.5,
+    "failure_time": {
+      "distribution": "uniform",
+      "params": [0.0,500.0]
+    },
+    "recover_time": {
+      "distribution": "truncated_normal",
+      "params": [400.0,20.0,200.0]
+    }
+  },
+  "client_failure": {
+    "period": 1000.0,
+    "distribution": "bernoulli",
+    "params": 0.5,
+    "failure_time": {
+      "distribution": "uniform",
+      "params": [0.0,500.0]
+    },
+    "recover_time": {
+      "distribution": "truncated_normal",
+      "params": [400.0,20.0,200.0]
+    }
+  },
+  "termination": {
+    "type": "work_completion",
+    "params": null
+  },
+  "trace_level": "high",
+  "show_trace": true
+}

@@ -6,7 +6,7 @@ License: MIT
 OASISFormat: 0.4
 BuildTools: ocamlbuild
 Plugins: META (0.4), DevFiles (0.4)
-BuildDepends: core, oUnit, threads
+BuildDepends: core, oUnit, threads, yojson
 
 Executable "main"
   Path: src
