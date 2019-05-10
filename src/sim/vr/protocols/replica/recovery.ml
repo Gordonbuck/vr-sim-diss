@@ -14,7 +14,7 @@ let on_recovery state i x =
     let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "not normal status") in
     (state, [], trace)
   else
-    let state = update_monitor state `Receive_Recovery in
+    let state = update_monitor state `Deliver_Recovery in
     let state = update_monitor state `Send_Recoveryresponse in
     let v = view_no state in
     let j = replica_no state in
@@ -41,14 +41,13 @@ let on_recoveryresponse state v x opt_p j =
       (state, [], trace)
     else
       let state = log_recoveryresponse state v x opt_p j in
-      let state = update_monitor state `Receive_Recoveryresponse in
+      let state = update_monitor state `Deliver_Recoveryresponse in
       let q = quorum state in
       let no_recoveryresponses = no_received_recoveryresponses state in
       if no_recoveryresponses >= q then
         match (primary_recoveryresponse state) with
         | Some(_, _, l, n, k, _) ->
-          let state = update_monitor state `Receive_Primaryrecoveryresponse in
-          let state = update_monitor state `Finish_Recovering in
+          let state = update_monitor state `Deliver_Primaryrecoveryresponse in
           let state = reset_monitor state in
           let state = set_log state l in
           let state =  set_op_no state n in

@@ -30,6 +30,7 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) : sig
     no_primary_comms : int;
     mach : StateMachine.t;
     monitor : VR_Safety_Monitor.s list * VR_Safety_Monitor.t;
+    request_monitors : VR_Safety_Monitor.t list;
     clock: float;
     received_leases: float list;
     sent_lease : float;

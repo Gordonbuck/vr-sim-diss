@@ -321,6 +321,7 @@ let log_recoveryresponse state v x opt_p j =
 
 let become_primary state = 
   let waiting_prepareoks = List.init (max (state.op_no - state.highest_seen_commit_no) 0) (fun _ -> 0) in
+  let request_monitors = List.init (max (state.op_no - state.highest_seen_commit_no) 0) (fun _ -> VR_Safety_Monitor.init ~q:(quorum state)) in
   let received_startviewchanges = List.map state.received_startviewchanges (fun _ -> false) in
   let casted_prepareoks = List.map state.casted_prepareoks (fun _ -> -1) in
   let valid_timeout = state.valid_timeout + 1 in
@@ -333,6 +334,7 @@ let become_primary state =
     doviewchanges = [];
     valid_timeout = valid_timeout;
     no_primary_comms = 0;
+    request_monitors = request_monitors;
    }
 
 let set_view_no state v = {state with view_no = v; }
@@ -354,6 +356,7 @@ let become_replica state =
    primary_recoveryresponse = None;
    valid_timeout = valid_timeout;
    no_primary_comms = 0;
+   request_monitors = [];
   }
 
 let increment_primary_comms state = 
@@ -373,11 +376,13 @@ let log_request state op c s =
   let op_no = state.op_no + 1 in
   let log = (op, c, s)::state.log in
   let waiting_prepareoks = 0::state.waiting_prepareoks in
+  let request_monitors = (VR_Safety_Monitor.tick (VR_Safety_Monitor.tick (VR_Safety_Monitor.init ~q:(quorum state)) `Deliver_Request) `Send_Prepare)::state.request_monitors in
   let state = update_client_table state c s in
   {state with 
    op_no = op_no;
    log = log;
    waiting_prepareoks = waiting_prepareoks;
+   request_monitors = request_monitors;
   }
 
 let rec add_nones l n = 
@@ -464,10 +469,12 @@ let log_prepareok state i n =
   let index = state.commit_no + no_waiting - n in
   let last_casted_index = state.commit_no + no_waiting - casted_prepareok in
   let waiting_prepareoks = List.mapi state.waiting_prepareoks (fun i w -> if i >= index && i < last_casted_index then w+1 else w) in
+  let request_monitors = List.mapi state.request_monitors (fun i m -> if i >= index && i < last_casted_index then VR_Safety_Monitor.tick m `Deliver_Prepareok else m) in
   let casted_prepareoks = List.mapi state.casted_prepareoks (fun idx m -> if idx = i then n else m) in
   {state with 
    waiting_prepareoks = waiting_prepareoks;
    casted_prepareoks = casted_prepareoks;
+   request_monitors = request_monitors;
   }
 
 let process_waiting_prepareoks state = 
@@ -482,7 +489,12 @@ let process_waiting_prepareoks state =
         process_waiting_prepareoks rev_waiting_prepareoks (n+1) in
   let (rev_waiting_prepareoks, rev_index) = process_waiting_prepareoks (List.rev state.waiting_prepareoks) (-1) in
   let waiting_prepareoks = List.rev rev_waiting_prepareoks in
+  let rev_request_monitors = List.rev state.request_monitors in
+  let rev_request_monitors = List.mapi rev_request_monitors (fun i m -> if i <= rev_index then VR_Safety_Monitor.tick m `Send_Reply else m) in
+  let rev_request_monitors = List.drop rev_request_monitors (rev_index + 1) in
+  let request_monitors = List.rev rev_request_monitors in
   let k = state.commit_no + rev_index + 1 in
   ({state with
     waiting_prepareoks = waiting_prepareoks;
+    request_monitors = request_monitors;
    }, k)

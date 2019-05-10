@@ -26,7 +26,7 @@ let on_startviewchange state v i =
       (state, [Communication(Unicast(ReplicaMessage(StartViewChange(view_no state, replica_no state)), int_of_index i))], trace)
     else
       let state = log_startviewchange state i in
-      let state = update_monitor state `Receive_Startviewchange in
+      let state = update_monitor state `Deliver_Startviewchange in
       let f = (quorum state) - 1 in
       let primary_no = primary_no state in
       let no_startviewchanges = no_received_startviewchanges state in
@@ -67,7 +67,7 @@ let on_doviewchange state v l v' n k i =
       (state, [], trace)
     else  
       let state = log_doviewchange state v l v' n k i in
-      let state = update_monitor state `Receive_Doviewchange in
+      let state = update_monitor state `Deliver_Doviewchange in
       let no_doviewchanges = no_received_doviewchanges state in
       let q = quorum state in
       if (no_doviewchanges = q) then
@@ -93,7 +93,7 @@ let on_startview state v l n k =
     let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "old view number / recovering / already in view") in
     (state, [], trace)
   else
-    let state = update_monitor state `Receive_Startview in
+    let state = update_monitor state `Deliver_Startview in
     let state = set_view_no state v in
     let state = set_op_no state n in
     let state = set_log state l in

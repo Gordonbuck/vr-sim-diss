@@ -11,7 +11,7 @@ let start_replica state =
 let on_request state op c s =
   let trace_event = "received request" in
   if (is_primary state && (status state) = Normal) then
-    let state = update_monitor state `Receive_Request in
+    let state = update_monitor state `Deliver_Request in
     let (cte_s, res_opt) = get_client_table_entry state c in
     if (s < cte_s) then
       (* drop request *) 
@@ -42,7 +42,7 @@ let on_request state op c s =
 let fr_on_request state op c s =
   let trace_event = "received request" in
   if (is_primary state && (status state) = Normal) then
-    let state = update_monitor state `Receive_Request in
+    let state = update_monitor state `Deliver_Request in
     let (cte_s, res_opt) = get_client_table_entry state c in
     if (s < cte_s) then
       (* drop request *) 
@@ -83,7 +83,7 @@ let on_prepare state v (op, c, s) n k =
   else if v > (view_no state) then
     later_view state v trace_event
   else
-    let state = update_monitor state `Receive_Prepare in
+    let state = update_monitor state `Deliver_Prepare in
     let primary_no = primary_no state in
     let state = increment_primary_comms state in
     let primary_timeout = ReplicaTimeout(PrimaryTimeout(valid_timeout state, no_primary_comms state), int_of_index (replica_no state)) in
@@ -117,7 +117,7 @@ let on_prepareok state v n i l =
   else if v > (view_no state) then
     later_view state v trace_event
   else
-    let state = update_monitor state `Receive_Prepareok in
+    let state = update_monitor state `Deliver_Prepareok in
     let state = update_lease state i l in
     let casted_prepareok = get_casted_prepareok state i in
     if casted_prepareok >= n || (commit_no state) >= n then
@@ -143,7 +143,7 @@ let on_commit state v k =
   else if v > (view_no state) then
     later_view state v trace_event
   else
-    let state = update_monitor state `Receive_Commit in
+    let state = update_monitor state `Deliver_Commit in
     let state = increment_primary_comms state in
     let (state, _) = commit state k in
     let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "commited operations") in

@@ -53,6 +53,7 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) = struct
 
     (* safety monitor *)
     monitor : (VR_Safety_Monitor.s list * VR_Safety_Monitor.t);
+    request_monitors : VR_Safety_Monitor.t list;
 
     (* time *)
     clock : float;
@@ -126,7 +127,8 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) = struct
           mach = StateMachine.create ();
 
           monitor = ([], VR_Safety_Monitor.init ~q:(n_replicas / 2 + 1));
-
+          request_monitors = [];
+          
           clock = 0.;
 
           received_leases = List.init n_replicas (fun _ -> -1.);
@@ -171,6 +173,7 @@ module ReplicaState (StateMachine : StateMachine.StateMachine_type) = struct
       mach = StateMachine.create ();
 
       monitor = (statecalls, VR_Safety_Monitor.init ~q:(n_replicas / 2 + 1));
+      request_monitors = [];
 
       clock = 0.;
 

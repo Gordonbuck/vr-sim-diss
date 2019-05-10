@@ -4,24 +4,23 @@ exception Bad_statecall
 type s = [
   |`Send_Recovery
   |`Send_Startviewchange
-  |`Receive_Prepare
+  |`Deliver_Doviewchange
   |`Send_Recoveryresponse
-  |`Receive_Startviewchange
   |`Send_Startview
   |`Send_Commit
-  |`Receive_Startview
-  |`Receive_Doviewchange
-  |`Receive_Recovery
-  |`Receive_Primaryrecoveryresponse
-  |`Finish_Recovering
+  |`Deliver_Prepare
+  |`Deliver_Recoveryresponse
+  |`Deliver_Primaryrecoveryresponse
+  |`Deliver_Prepareok
+  |`Deliver_Commit
   |`Send_Reply
   |`Send_Prepare
+  |`Deliver_Recovery
   |`Send_Prepareok
-  |`Receive_Prepareok
-  |`Receive_Request
-  |`Receive_Commit
-  |`Receive_Recoveryresponse
+  |`Deliver_Startviewchange
   |`Send_Doviewchange
+  |`Deliver_Startview
+  |`Deliver_Request
 ]
 
 type t

@@ -1,36 +1,46 @@
-function normal() {
-  either {
-    multiple {
-      either {
-        Receive_Prepare;
-        optional { Send_Prepareok; }
-      } or {
-        Receive_Commit;
-      } or {
-        Receive_Recovery;
-        Send_Recoveryresponse;
+function primary_request_process(int n_pos, int q) {
+  Deliver_Request;
+  Send_Prepare;
+  do {
+    Deliver_Prepareok;
+    n_pos = n_pos + 1;
+  } until (n_pos == q-1);
+  Send_Reply;
+}
+
+function normal_primary() {
+  multiple {
+    either {
+      Deliver_Request;
+      optional { 
+          either {
+            Send_Prepare;
+          } or {
+            Send_Reply;
+          }
       }
+    } or {
+      Deliver_Prepareok;
+      optional { Send_Reply; }
+    } or {
+      Send_Commit;
+    } or {
+      Deliver_Recovery;
+      Send_Recoveryresponse;
     }
-  } or {
-    multiple {
-      either {
-        Receive_Request;
-        optional { 
-            either {
-              Send_Prepare;
-            } or {
-              Send_Reply;
-            }
-        }
-      } or {
-        Receive_Prepareok;
-        optional { Send_Reply; }
-      } or {
-        Send_Commit;
-      } or {
-        Receive_Recovery;
-        Send_Recoveryresponse;
-      }
+  }
+}
+
+function normal_backup() {
+  multiple {
+    either {
+      Deliver_Prepare;
+      optional { Send_Prepareok; }
+    } or {
+      Deliver_Commit;
+    } or {
+      Deliver_Recovery;
+      Send_Recoveryresponse;
     }
   }
 }
@@ -39,10 +49,10 @@ function viewchange(int n_svcs, int n_dvcs, int q) {
   Send_Startviewchange;
   do {
     either {
-      Receive_Startviewchange;
+      Deliver_Startviewchange;
       n_svcs = n_svcs + 1;
     } or {
-      Receive_Doviewchange;
+      Deliver_Doviewchange;
       n_dvcs = n_dvcs + 1;
     } or {
       Send_Startviewchange;
@@ -60,27 +70,32 @@ function viewchange(int n_svcs, int n_dvcs, int q) {
 function recovery(int n_rrs, bool prr, int q) {
   Send_Recovery;
   do {
-    Receive_Recoveryresponse;
+    Deliver_Recoveryresponse;
     n_rrs = n_rrs + 1;
     optional {
-      Receive_Primaryrecoveryresponse;
+      Deliver_Primaryrecoveryresponse;
       prr = true;
     }
   } until (n_rrs >= q && prr);
-  Finish_Recovering;
 }
 
-automaton vr(int n_svcs, int n_dvcs, int n_rrs, bool prr, int q) {
-  during {
-    either {
-      normal();
-    } or {
-      viewchange(n_svcs, n_dvcs, q);
-    } or {
-      recovery(n_rrs, prr, q);
+automaton vr(int n_pos, int n_svcs, int n_dvcs, int n_rrs, bool prr, int q) {
+  either {
+    during {
+      either {
+        normal_primary();
+      } or {
+        normal_backup();
+      } or {
+        viewchange(n_svcs, n_dvcs, q);
+      } or {
+        recovery(n_rrs, prr, q);
+      }
+    } handle {
+      Deliver_Startview;
+      optional { Send_Prepareok; }
     }
-  } handle {
-    Receive_Startview;
-    optional { Send_Prepareok; }
+  } or {
+    primary_request_process(n_pos, q);
   }
 }
