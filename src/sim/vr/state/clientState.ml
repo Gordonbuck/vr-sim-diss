@@ -67,7 +67,7 @@ module ClientState (StateMachine : StateMachine.StateMachine_type) = struct
       client_id = state.client_id;
       request_no = -1;
 
-      next_op_index = state.next_op_index;
+      next_op_index = state.next_op_index - 1;
       operations_to_do = state.operations_to_do;
 
       recovering = false;

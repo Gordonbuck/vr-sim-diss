@@ -1,6 +1,6 @@
 {
   "version": {
-    "optimisation": "fast_reads",
+    "optimisation": "base",
     "params": 80.0
   },
   "n_replicas": 11,
@@ -10,8 +10,8 @@
   "n_iterations": 1,
   "workloads": [10,15,20],
   "packet_loss": {
-    "distribution": "bernoulli",
-    "params": 0.01
+    "distribution": "gilbert_elliott",
+    "params": [0.999,0.7,0.999,0.8]
   },
   "packet_duplication": {
     "distribution": "bernoulli",
