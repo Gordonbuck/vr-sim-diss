@@ -2,6 +2,8 @@
 type t = [
   |`Deliver_Commit
   |`Deliver_Doviewchange
+  |`Deliver_Getstate
+  |`Deliver_Newstate
   |`Deliver_Prepare
   |`Deliver_Prepareok
   |`Deliver_Primaryrecoveryresponse
@@ -12,6 +14,8 @@ type t = [
   |`Deliver_Startviewchange
   |`Send_Commit
   |`Send_Doviewchange
+  |`Send_Getstate
+  |`Send_Newstate
   |`Send_Prepare
   |`Send_Prepareok
   |`Send_Recovery
@@ -24,6 +28,8 @@ type t = [
 let string_of_statecall (x:t) = match x with
   |`Deliver_Commit -> "Deliver_Commit"
   |`Deliver_Doviewchange -> "Deliver_Doviewchange"
+  |`Deliver_Getstate -> "Deliver_Getstate"
+  |`Deliver_Newstate -> "Deliver_Newstate"
   |`Deliver_Prepare -> "Deliver_Prepare"
   |`Deliver_Prepareok -> "Deliver_Prepareok"
   |`Deliver_Primaryrecoveryresponse -> "Deliver_Primaryrecoveryresponse"
@@ -34,6 +40,8 @@ let string_of_statecall (x:t) = match x with
   |`Deliver_Startviewchange -> "Deliver_Startviewchange"
   |`Send_Commit -> "Send_Commit"
   |`Send_Doviewchange -> "Send_Doviewchange"
+  |`Send_Getstate -> "Send_Getstate"
+  |`Send_Newstate -> "Send_Newstate"
   |`Send_Prepare -> "Send_Prepare"
   |`Send_Prepareok -> "Send_Prepareok"
   |`Send_Recovery -> "Send_Recovery"

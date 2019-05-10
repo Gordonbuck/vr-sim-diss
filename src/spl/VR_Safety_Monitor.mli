@@ -2,15 +2,19 @@
 exception Bad_statecall
 
 type s = [
+  |`Send_Getstate
+  |`Deliver_Newstate
   |`Send_Recovery
   |`Send_Startviewchange
   |`Deliver_Doviewchange
   |`Send_Recoveryresponse
+  |`Deliver_Getstate
   |`Send_Startview
   |`Send_Commit
   |`Deliver_Prepare
   |`Deliver_Recoveryresponse
   |`Deliver_Primaryrecoveryresponse
+  |`Send_Newstate
   |`Deliver_Prepareok
   |`Deliver_Commit
   |`Send_Reply
