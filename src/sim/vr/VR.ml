@@ -149,7 +149,9 @@ let build_protocol ver =
     let rec string_of_client_table ct c str = 
       match ct with
       | [] -> String.concat([str; "]"])
-      | (s, _)::ct -> string_of_client_table ct (c+1) (String.concat ([(Printf.sprintf "(%i,%i)" c (int_of_index s));str])) in
+      | (s, res)::ct -> 
+        let res_str = match res with | None -> "none" | Some(_) -> "some" in
+        string_of_client_table ct (c+1) (String.concat ([(Printf.sprintf "(%i,%i,%s)" c (int_of_index s) res_str);str])) in
     let rec string_of_log log str = 
       match log with
       | [] -> String.concat ([str; "]"])

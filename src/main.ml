@@ -5,41 +5,41 @@ open VR
 
 let conf = {
   n_replicas = 11;
-  n_clients = 3;
+  n_clients = 20;
   max_replica_failures = 5;
   max_client_failures = 1;
   n_iterations = 1;
-  workloads = [10;15;20];
-  packet_loss = (*GilbertElliott(0.03, 0.4, 0.99, 0.1);*) Bernoulli(0.01);
-  packet_duplication = Bernoulli(0.01);
-  packet_delay = TruncatedNormal(30., 6., 15.);
-  heartbeat_timeout = 20.;
-  prepare_timeout = 40.;
-  primary_timeout = 120.;
-  statetransfer_timeout = 50.;
-  startviewchange_timeout = 40.;
-  doviewchange_timeout = 40.;
-  recovery_timeout = 40.;
-  getstate_timeout = 40.;
-  request_timeout = 40.;
-  clientrecovery_timeout = 40.;
+  workloads = (List.init 20 (fun _ -> 5));
+  packet_loss = Bernoulli(0.1);
+  packet_duplication = Bernoulli(0.1);
+  packet_delay = TruncatedNormal(285.0, 350.0, 200.0);
+  heartbeat_timeout = 1500.;
+  prepare_timeout = 1200.0;
+  primary_timeout = 3000.;
+  statetransfer_timeout = 3000.;
+  startviewchange_timeout = 1600.0;
+  doviewchange_timeout = 1600.0;
+  recovery_timeout = 1600.0;
+  getstate_timeout = 1600.0;
+  request_timeout = 3500.0;
+  clientrecovery_timeout = 1600.0;
   clock_skew = Constant(0.);
-  replica_failure_period = 1000.;
-  replica_failure = (Bernoulli(0.5), Uniform(0., 500.), TruncatedNormal(400., 20., 200.));
-  client_failure_period = 1000.;
-  client_failure = (Bernoulli(0.5), Uniform(0., 500.), TruncatedNormal(400., 20., 200.));
+  replica_failure_period = 60000000.;
+  replica_failure = (Bernoulli(0.05), Uniform(0., 60000000.), TruncatedNormal(30000000., 5000000., 25000000.));
+  client_failure_period = 60000000.;
+  client_failure = (Bernoulli(0.05), Uniform(0., 60000000.), TruncatedNormal(30000000., 5000000., 25000000.));
   termination = WorkCompletion;
-  trace_level = High;
+  trace_level = Medium;
   show_trace = true;
 }
 
 module MyParams = (val (build_params conf) : Params)
 
-module MyVR = (val (build_protocol (FastReads(80.))) : Protocol)
+module MyVR = (val (build_protocol (Base)) : Protocol)
 
 let sim_runs () = 
-  let params_n = 1 in
-  let n_iterations = 100 in
+  let params_n = 19 in
+  let n_iterations = 10000 in
   let module VR_Sim = Simulator(MyVR)(MyParams) in
   let rec run i =
     if i = n_iterations then ()

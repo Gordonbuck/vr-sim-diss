@@ -7,19 +7,19 @@
   "n_clients": 3,
   "max_replica_failures": 5,
   "max_client_failures": 1,
-  "n_iterations": 1,
+  "n_iterations": 1000,
   "workloads": [10,15,20],
   "packet_loss": {
     "distribution": "gilbert_elliott",
-    "params": [0.999,0.7,0.999,0.8]
+    "params": [0.99,0.7,0.9,0.5]
   },
   "packet_duplication": {
     "distribution": "bernoulli",
-    "params": 0.01
+    "params": 0.1
   },
   "packet_delay": {
     "distribution": "truncated_normal",
-    "params": [30.0,6.0,15.0]
+    "params": [30.0,15.0,15.0]
   },
   "heartbeat_timeout": 20.0,
   "prepare_timeout": 40.0,
@@ -32,8 +32,8 @@
   "request_timeout": 40.0,
   "clientrecovery_timeout": 40.0,
   "clock_skew": {
-    "distribution": "constant",
-    "params": 0.0
+    "distribution": "uniform",
+    "params": [0.0,10.0]
   },
   "replica_failure": {
     "period": 1000.0,
@@ -41,7 +41,7 @@
     "params": 0.5,
     "failure_time": {
       "distribution": "uniform",
-      "params": [0.0,500.0]
+      "params": [0.0,1000.0]
     },
     "recover_time": {
       "distribution": "truncated_normal",
@@ -54,7 +54,7 @@
     "params": 0.5,
     "failure_time": {
       "distribution": "uniform",
-      "params": [0.0,500.0]
+      "params": [0.0,1000.0]
     },
     "recover_time": {
       "distribution": "truncated_normal",
@@ -66,5 +66,5 @@
     "params": null
   },
   "trace_level": "high",
-  "show_trace": true
+  "show_trace": false
 }

@@ -139,6 +139,7 @@ val no_received_recoveryresponses: replica_state -> int
 val current_recovery_nonce: replica_state -> int
 val primary_recoveryresponse: replica_state -> (index * int * (StateMachine.operation * index * index) list * index * index * index) option
 
+val outstanding_ops: replica_state -> index list
 val get_casted_prepareok: replica_state -> index -> index
 
 val received_startviewchange: replica_state -> index -> bool

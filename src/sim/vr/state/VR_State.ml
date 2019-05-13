@@ -385,6 +385,11 @@ let log_request state op c s =
    request_monitors = request_monitors;
   }
 
+let outstanding_ops state = 
+  if state.op_no > state.commit_no then 
+    List.init (state.op_no - state.commit_no) (fun n -> (n + 1 + state.commit_no))  
+  else []
+
 let rec add_nones l n = 
   match n with 
   | _ when n < 1 -> l
@@ -430,7 +435,7 @@ let process_doviewchanges state =
       let commit_no = if (k > commit_no) then k else commit_no in
       process_doviewchanges doviewchanges view_no log last_normal_view_no op_no commit_no in
   let (view_no, log, op_no, commit_no) = process_doviewchanges state.doviewchanges (-1) [] (-1) (-1) (-1) in
-  let state = update_client_table_requests state (List.rev log) in
+  let state = update_client_table_requests state (List.rev (List.drop log (min state.op_no op_no))) in
   ({state with 
     view_no = view_no;
     op_no = op_no;

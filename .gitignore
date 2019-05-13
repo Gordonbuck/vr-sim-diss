@@ -12,3 +12,4 @@ setup.bin
 
 src/spl/splc
 data/*
+!data/process.py

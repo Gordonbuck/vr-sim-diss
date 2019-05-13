@@ -80,9 +80,10 @@ let on_doviewchange state v l v' n k i =
         let state = reset_monitor state in
         let events = List.map replies (fun c -> Communication(c)) in
         let timeout = ReplicaTimeout(HeartbeatTimeout(valid_timeout state, op_no state), int_of_index (replica_no state)) in
+        let prepare_timeouts = List.map (outstanding_ops state) (fun n -> Timeout(ReplicaTimeout(PrepareTimeout(valid_timeout state, n), int_of_index (replica_no state)))) in
         let comm = Broadcast(ReplicaMessage(StartView(view_no state, log state, op_no state, commit_no state))) in
         let trace = ReplicaTrace(int_of_index (replica_no state), n_replicas state, state, trace_event, "broadcast start view") in
-        (state, Timeout(timeout)::Communication(comm)::events, trace)
+        (state, Timeout(timeout)::Communication(comm)::(prepare_timeouts@events), trace)
       else
         let trace = ReplicaTrace(int_of_index (replica_no state), 0, state, trace_event, "waiting on more do view changes") in
         (state, [], trace)
