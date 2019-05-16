@@ -7,7 +7,7 @@
   "n_clients": 3,
   "max_replica_failures": 5,
   "max_client_failures": 1,
-  "n_iterations": 1000,
+  "n_iterations": 1,
   "workloads": [10,15,20],
   "packet_loss": {
     "distribution": "gilbert_elliott",
@@ -66,5 +66,5 @@
     "params": null
   },
   "trace_level": "high",
-  "show_trace": false
+  "show_trace": true
 }

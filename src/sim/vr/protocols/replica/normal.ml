@@ -59,7 +59,7 @@ let fr_on_request state op c s =
         let state = update_monitor state `Send_Reply in
         (state, [Communication(Unicast(ClientMessage(Reply(view_no state, s, res)), int_of_index c))], trace)
     else 
-      if (StateMachine.is_idempotent op) && (check_leases state) then
+      if (StateMachine.is_read op) && (check_leases state) then
         let (state, res) = upcall state op in
         let trace = ReplicaTrace(int_of_index (replica_no state), 1, state, trace_event, "idempotent operation and hold valid leases, send reply") in
         (state, [Communication(Unicast(ClientMessage(Reply(view_no state, s, res)), int_of_index c))], trace)

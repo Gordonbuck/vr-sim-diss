@@ -95,13 +95,13 @@ automaton vr(int n_pos, int n_svcs, int n_dvcs, int n_rrs, bool prr, int q) {
         normal_backup();
       } or {
         viewchange(n_svcs, n_dvcs, q);
-      } or {
-        recovery(n_rrs, prr, q);
       }
     } handle {
       Deliver_Startview;
       optional { Send_Prepareok; }
     }
+  } or {
+    recovery(n_rrs, prr, q);
   } or {
     primary_request_process(n_pos, q);
   }

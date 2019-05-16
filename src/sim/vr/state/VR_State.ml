@@ -59,7 +59,6 @@ let statecalls state =
 
 let print_statecalls state = Printf.printf "\n%s\n" (String.concat ~sep:" " (List.map (statecalls state) VR_Statecalls.string_of_statecall))
 
-let index_of_int i = if i < -1 then assert(false) else i
 let int_of_index i = i
 
 let n_replicas state = List.length state.configuration
@@ -364,7 +363,9 @@ let increment_primary_comms state =
   {state with no_primary_comms = no_primary_comms; }
 
 let update_client_table ?(res=None) state c s = 
-  let client_table  = List.mapi state.client_table (fun i cte -> if i = c then (s, res) else cte) in
+  let client_table  = List.mapi state.client_table (fun i cte -> 
+      let (cte_s, cte_res) = cte in
+      if i = c && (s > cte_s || (s = cte_s && Option.is_some res)) then (s, res) else cte) in
   {state with client_table = client_table; }
 
 let rec update_client_table_requests state reqs = 

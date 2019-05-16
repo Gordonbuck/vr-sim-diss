@@ -67,7 +67,6 @@ val reset_monitor: replica_state -> replica_state
 val update_monitor: replica_state -> VR_Safety_Monitor.s -> replica_state
 val statecalls: replica_state -> VR_Safety_Monitor.s list
 
-val index_of_int: int -> index
 val int_of_index: index -> int
 
 val init_clients: int -> int -> client_state list

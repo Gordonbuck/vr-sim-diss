@@ -1,20 +1,6 @@
 open Core
 open OUnit2
 
-let index_tests = 
-  "index_tests">:::
-  (List.map
-     [(-1, -1);
-      (0, 0);
-      (7, 7)]
-     (fun (arg,res) ->
-        let title =
-          Printf.sprintf "%i->%i" arg res
-        in
-        title >::
-        (fun test_ctxt ->
-           assert_equal res (VR_State.int_of_index (VR_State.index_of_int arg)))))
-
 let index_of_client_tests = 
   let clients = VR_State.init_clients 10 3 in
   "index_of_client_tests">:::
@@ -142,6 +128,6 @@ let eventlist_tests =
            assert_equal res arg)))
 
 let () = 
-  run_test_tt_main (test_list [index_tests;index_of_client_tests;index_of_replica_tests;
+  run_test_tt_main (test_list [index_of_client_tests;index_of_replica_tests;
                                n_replicas_tests;client_n_replicas_tests;
                                simtime_inc_tests;simtime_compare_tests;eventlist_tests])

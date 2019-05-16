@@ -91,6 +91,8 @@ def cdf_times(fname, top_outliers, label):
         
         print(vals)
         print(percentages)
+        
+        print(np.mean(vals), np.std(vals))
                 
         plt.step(vals, percentages, where='post', label=label)
         plt.ylabel("Cumulative percentage")
@@ -110,7 +112,7 @@ def plot_fr_request_times():
     plt.legend(loc=2)
     plt.show()
 
-def plot_pl_request_times(length):
+def plot_pl_request_times(length, loc):
     cdf_times("params1_request_times", 2, "$0.0001$")
     cdf_times("params11_request_times", 0, "$0.001$")
     cdf_times("params12_request_times", 0, "$0.01$")
@@ -118,7 +120,7 @@ def plot_pl_request_times(length):
     
     plt.xlabel("Time for request to be serviced ($\mu s$)")
     plt.xlim(1250.0, length)
-    plt.legend(loc=2)
+    plt.legend(loc=loc)
     plt.show()
 
 
@@ -143,7 +145,7 @@ def plot_fr_viewchange_times():
     
     plt.xlabel("Time for view change ($\mu s$)")
     plt.xlim(4000.0, 7500.0)
-    plt.legend(loc=2)
+    plt.legend(loc=4)
     plt.show()
     
 def get_stats(fname, top_outliers):
@@ -179,20 +181,31 @@ def plot_fr_request_means():
     zipped_fnames = zip(fnames, top_outliers_list)
     means, stdvs = list(map(list, zip(*[get_stats(fname, top_outliers) for fname, top_outliers in zipped_fnames])))[:-1]
     mean_plot(labels, means, stdvs)
-    plt.ylabel("Mean time for request to be serviced")
-    plt.xticks(rotation=90)
+    plt.ylabel("Mean time for request to be serviced ($\mu s$)")
+    plt.tight_layout()
+    plt.show()
+    
+def plot_pl_request_means():
+    fnames = ["params1_request_times","params11_request_times","params12_request_times","params13_request_times"]
+    labels = ["0.0001", "0.001", "0.01", "0.1"]
+    top_outliers_list = [2,0,0,2]
+    zipped_fnames = zip(fnames, top_outliers_list)
+    means, stdvs = list(map(list, zip(*[get_stats(fname, top_outliers) for fname, top_outliers in zipped_fnames])))[:-1]
+    mean_plot(labels, means, stdvs)
+    plt.ylabel("Mean time for request to be serviced ($\mu s$)")
+    plt.xlabel("Packet loss rate")
     plt.tight_layout()
     plt.show()
     
 def plot_histogram(fname, top_outliers, label):
     with open(fname) as f:
         lines = f.readlines()
-        vals = np.array([int(line) for line in lines], dtype=np.float32)
+        vals = np.array([float(line) for line in lines], dtype=np.float32)
         vals = np.sort(vals)
         if top_outliers > 0:
             vals = vals[:-top_outliers]
             
-        bins = np.unique(vals)
+        bins = np.unique([int(val) for val in vals])
         print(vals)
         
         plt.ylabel('Percentage')
@@ -213,21 +226,27 @@ def plot_preparetimeout_request_times():
     
     plt.xlabel("Time for request to be serviced ($\mu s$)")
     plt.xlim(1250.0, 10000.0)
-    plt.legend(loc=2)
+    plt.legend(loc=4)
     plt.show()
     
+def plot_pl_histogram():
+    plot_histogram("params13_request_times", 2, "Base")
+    
+    plt.xlabel("Time for request to be serviced ($\mu s$)")
+    plt.show()
 
+plt.rcParams.update({'font.size': 18})
 #plot_pt_request_times(10000.0)
 
-#plot_pl_request_times(3500.0)
-#plot_pl_request_times(10000.0)    
+#plot_pl_request_times(3500.0, 2)
+#plot_pl_request_times(10000.0, 4)
+#plot_pl_request_means()
+#plot_pl_histogram()
 #plot_preparetimeout_request_times()
 
 #plot_fr_request_times()
 #plot_fr_request_means()
 
 #plot_fr_viewchange_times()
-plot_viewchange_packets_histogram()
-
-
+#plot_viewchange_packets_histogram()
 
